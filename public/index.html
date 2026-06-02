@@ -40,6 +40,53 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
   align-items:center;justify-content:center;flex-shrink:0
 }
 
+/* ── 레이어 전환 패널 ── */
+#layer-switcher{
+  position:absolute;top:56px;right:10px;z-index:300;
+  display:flex;flex-direction:column;gap:3px;
+}
+#layer-toggle-btn{
+  font-family:'Orbitron',monospace;font-size:9px;font-weight:700;
+  padding:5px 10px;border-radius:2px;cursor:pointer;letter-spacing:1px;
+  background:rgba(4,14,26,.9);border:1px solid var(--border);
+  color:var(--accent);backdrop-filter:blur(8px);text-align:center;
+  white-space:nowrap;transition:all .2s;user-select:none;
+}
+#layer-toggle-btn:hover{border-color:var(--accent);background:rgba(0,200,255,.12)}
+#layer-menu{
+  display:none;flex-direction:column;gap:3px;
+  background:rgba(4,14,26,.96);border:1px solid var(--border);
+  border-radius:3px;padding:8px;backdrop-filter:blur(16px);min-width:160px;
+}
+#layer-menu.open{display:flex}
+.lyr-section-title{
+  font-family:'Orbitron',monospace;font-size:8px;color:var(--muted);
+  letter-spacing:1.5px;padding:4px 2px 3px;border-bottom:1px solid var(--border);
+  margin-bottom:3px;text-transform:uppercase
+}
+.lyr-btn{
+  font-family:'Noto Sans KR',sans-serif;font-size:11px;
+  padding:6px 9px;border-radius:2px;cursor:pointer;text-align:left;
+  background:rgba(0,200,255,.04);border:1px solid transparent;
+  color:var(--text);transition:all .2s;user-select:none;display:flex;align-items:center;gap:7px;
+}
+.lyr-btn:hover{background:rgba(0,200,255,.12);border-color:rgba(0,200,255,.3)}
+.lyr-btn.active{background:rgba(0,200,255,.2);border-color:var(--accent);color:#fff}
+.lyr-icon{font-size:13px;flex-shrink:0}
+.lyr-sep{height:1px;background:var(--border);margin:4px 0}
+/* 오버레이 슬라이더 */
+.lyr-overlay-row{display:flex;align-items:center;gap:7px;padding:4px 2px;margin-top:2px}
+.lyr-overlay-label{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--muted);min-width:60px}
+.lyr-alpha-slider{
+  flex:1;height:3px;-webkit-appearance:none;
+  background:linear-gradient(90deg,var(--accent) var(--pct,70%),rgba(0,200,255,.12) var(--pct,70%));
+  border-radius:2px;outline:none;cursor:pointer;
+}
+.lyr-alpha-slider::-webkit-slider-thumb{
+  -webkit-appearance:none;width:12px;height:12px;border-radius:50%;
+  background:var(--accent);box-shadow:0 0 6px rgba(0,200,255,.5)
+}
+
 /* ── 재난 탭 ── */
 #tabs{
   position:absolute;top:56px;left:50%;transform:translateX(-50%);
@@ -250,6 +297,34 @@ input[type=range]::-webkit-slider-thumb{
 <!-- DEM 안내 (토큰 없을 때) -->
 <div id="dem-notice" style="display:none">⚠ Cesium 토큰 미설정 — 평면 지도 모드로 실행 중</div>
 
+<!-- 레이어 전환 -->
+<div id="layer-switcher">
+  <button id="layer-toggle-btn" onclick="toggleLayerMenu()">🗺 지도 레이어 ▾</button>
+  <div id="layer-menu">
+    <div class="lyr-section-title">기본 배경지도</div>
+    <div class="lyr-btn active" data-base="ion_satellite" onclick="setBase(this)"><span class="lyr-icon">🛰</span>Cesium Ion 위성</div>
+    <div class="lyr-btn" data-base="osm" onclick="setBase(this)"><span class="lyr-icon">🗺</span>OpenStreetMap</div>
+    <div class="lyr-btn" data-base="esri_satellite" onclick="setBase(this)"><span class="lyr-icon">🌍</span>Esri 위성</div>
+    <div class="lyr-btn" data-base="esri_topo" onclick="setBase(this)"><span class="lyr-icon">⛰</span>Esri 지형도</div>
+    <div class="lyr-btn" data-base="carto_dark" onclick="setBase(this)"><span class="lyr-icon">🌑</span>Carto 다크</div>
+    <div class="lyr-btn" data-base="stamen_toner" onclick="setBase(this)"><span class="lyr-icon">📋</span>Stadia Toner</div>
+    <div class="lyr-sep"></div>
+    <div class="lyr-section-title">오버레이 추가</div>
+    <div class="lyr-btn" data-overlay="osm_overlay" onclick="toggleOverlay(this,'osm_overlay')"><span class="lyr-icon">➕</span>OSM 도로망</div>
+    <div class="lyr-btn" data-overlay="stamen_labels" onclick="toggleOverlay(this,'stamen_labels')"><span class="lyr-icon">➕</span>지명 레이블</div>
+    <div class="lyr-sep"></div>
+    <div class="lyr-section-title">불투명도</div>
+    <div class="lyr-overlay-row">
+      <span class="lyr-overlay-label">배경</span>
+      <input type="range" class="lyr-alpha-slider" min="0" max="1" step="0.05" value="1" style="--pct:100%" oninput="setBaseAlpha(this)"/>
+    </div>
+    <div class="lyr-overlay-row">
+      <span class="lyr-overlay-label">오버레이</span>
+      <input type="range" class="lyr-alpha-slider" min="0" max="1" step="0.05" value="0.7" style="--pct:70%" oninput="setOverlayAlpha(this)"/>
+    </div>
+  </div>
+</div>
+
 <!-- 재난 탭 -->
 <div id="tabs">
   <div class="tab active" data-t="flood">🌊 홍수</div>
@@ -376,12 +451,21 @@ async function initCesium() {
     });
 
     if (hasTok) {
-      // ② Bing 위성 또는 Ion World Imagery
-      viewer.imageryLayers.addImageryProvider(
+      // ② Ion 위성을 baseLayer로 등록
+      baseLayer = viewer.imageryLayers.addImageryProvider(
         new Cesium.IonImageryProvider({ assetId: 3 })
       );
     } else {
+      baseLayer = viewer.imageryLayers.addImageryProvider(
+        new Cesium.UrlTemplateImageryProvider({
+          url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+          subdomains: ['a','b','c'], maximumLevel: 19,
+        })
+      );
       document.getElementById('dem-notice').style.display = 'block';
+      // 레이어 메뉴 기본 선택 변경
+      document.querySelector('.lyr-btn[data-base="ion_satellite"]').classList.remove('active');
+      document.querySelector('.lyr-btn[data-base="osm"]').classList.add('active');
       addLog('warn','Cesium 토큰 없음 — DEM 비활성, OSM 모드');
     }
 
@@ -406,6 +490,114 @@ async function initCesium() {
   }
 
   setupDraw();
+}
+
+// ════════════════════════════════════════════
+//  IMAGERY LAYER SWITCHER
+// ════════════════════════════════════════════
+let baseLayer    = null;   // 현재 기본 레이어
+let overlayLayers = {};    // { key: ImageryLayer }
+let overlayAlpha = 0.7;
+
+// 레이어 소스 정의
+const BASE_SOURCES = {
+  ion_satellite: () => new Cesium.IonImageryProvider({ assetId: 3 }),
+  osm:           () => new Cesium.UrlTemplateImageryProvider({
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    subdomains: ['a','b','c'], maximumLevel: 19,
+    credit: '© OpenStreetMap',
+  }),
+  esri_satellite: () => new Cesium.UrlTemplateImageryProvider({
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    credit: '© Esri',
+  }),
+  esri_topo: () => new Cesium.UrlTemplateImageryProvider({
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+    credit: '© Esri',
+  }),
+  carto_dark: () => new Cesium.UrlTemplateImageryProvider({
+    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    subdomains: ['a','b','c','d'], maximumLevel: 19,
+    credit: '© Carto',
+  }),
+  stamen_toner: () => new Cesium.UrlTemplateImageryProvider({
+    url: 'https://tiles.stadiamaps.com/tiles/stamen_toner/{z}/{x}/{y}.png',
+    maximumLevel: 20,
+    credit: '© Stadia Maps',
+  }),
+};
+
+const OVERLAY_SOURCES = {
+  osm_overlay: () => new Cesium.UrlTemplateImageryProvider({
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    subdomains: ['a','b','c'], maximumLevel: 19,
+    credit: '© OpenStreetMap',
+  }),
+  stamen_labels: () => new Cesium.UrlTemplateImageryProvider({
+    url: 'https://tiles.stadiamaps.com/tiles/stamen_toner_labels/{z}/{x}/{y}.png',
+    maximumLevel: 20,
+    credit: '© Stadia Maps',
+  }),
+};
+
+function toggleLayerMenu() {
+  document.getElementById('layer-menu').classList.toggle('open');
+}
+// 레이어 메뉴 외부 클릭 시 닫기
+document.addEventListener('click', e => {
+  const sw = document.getElementById('layer-switcher');
+  if (!sw.contains(e.target)) document.getElementById('layer-menu').classList.remove('open');
+});
+
+async function setBase(el) {
+  const key = el.dataset.base;
+  document.querySelectorAll('.lyr-btn[data-base]').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+
+  // 기존 기본 레이어 제거 (index 0)
+  const layers = viewer.imageryLayers;
+  if (baseLayer) layers.remove(baseLayer, true);
+
+  const provider = await BASE_SOURCES[key]();
+  baseLayer = layers.addImageryProvider(provider);
+  baseLayer.alpha = parseFloat(document.querySelector('.lyr-alpha-slider').value);
+
+  // 기본 레이어를 맨 아래로
+  while (layers.indexOf(baseLayer) > 0) layers.lower(baseLayer);
+
+  // 오버레이 알파 재적용
+  Object.values(overlayLayers).forEach(l => { if(l) l.alpha = overlayAlpha; });
+
+  addLog('info', `지도 변경: ${el.textContent.trim()}`);
+}
+
+async function toggleOverlay(el, key) {
+  if (overlayLayers[key]) {
+    viewer.imageryLayers.remove(overlayLayers[key], true);
+    delete overlayLayers[key];
+    el.classList.remove('active');
+    el.querySelector('.lyr-icon').textContent = '➕';
+    addLog('info', `오버레이 제거: ${key}`);
+  } else {
+    const provider = await OVERLAY_SOURCES[key]();
+    const layer = viewer.imageryLayers.addImageryProvider(provider);
+    layer.alpha = overlayAlpha;
+    overlayLayers[key] = layer;
+    el.classList.add('active');
+    el.querySelector('.lyr-icon').textContent = '✓';
+    addLog('info', `오버레이 추가: ${key}`);
+  }
+}
+
+function setBaseAlpha(el) {
+  const v = parseFloat(el.value);
+  el.style.setProperty('--pct', (v*100)+'%');
+  if (baseLayer) baseLayer.alpha = v;
+}
+function setOverlayAlpha(el) {
+  overlayAlpha = parseFloat(el.value);
+  el.style.setProperty('--pct', (overlayAlpha*100)+'%');
+  Object.values(overlayLayers).forEach(l => { if(l) l.alpha = overlayAlpha; });
 }
 
 // ════════════════════════════════════════════
