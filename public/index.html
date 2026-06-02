@@ -434,10 +434,17 @@ async function initCesium() {
       ? await Cesium.createWorldTerrainAsync({ requestWaterMask: true, requestVertexNormals: true })
       : new Cesium.EllipsoidTerrainProvider();
 
-    // ── Viewer 생성: imageryProvider 옵션 완전 제거 후 수동 추가 ──
+    // ── Viewer 생성: OSM으로 안전하게 초기화 후 교체 ──
+    //    imageryProvider:false 는 Cesium 1.114에서 tilingScheme 오류 발생 → 사용 금지
+    const initProvider = new Cesium.UrlTemplateImageryProvider({
+      url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+      maximumLevel: 19,
+      credit: '© OpenStreetMap',
+    });
+
     viewer = new Cesium.Viewer('cesiumContainer', {
       terrainProvider: terrain,
-      imageryProvider: false,          // 내장 레이어 완전 비활성
+      imageryProvider: initProvider,   // 반드시 유효한 provider로 초기화
       baseLayerPicker: false,
       animation: false, fullscreenButton: false,
       vrButton: false, geocoder: false, homeButton: false,
@@ -446,24 +453,20 @@ async function initCesium() {
       orderIndependentTranslucency: false,
     });
 
-    // 기본 레이어(index 0)가 자동 생성되어 있으면 제거
-    while (viewer.imageryLayers.length > 0) {
-      viewer.imageryLayers.remove(viewer.imageryLayers.get(0), true);
-    }
+    // Viewer가 자동 생성한 레이어(index 0) = initProvider 레이어
+    // 이걸 baseLayer로 등록해두고, 토큰 있으면 Ion으로 교체
+    baseLayer = viewer.imageryLayers.get(0);
 
-    // ② 기본 배경 레이어 추가
+    // ② Ion 위성으로 교체 (토큰 있을 때)
     if (hasTok) {
+      viewer.imageryLayers.remove(baseLayer, true);
       baseLayer = viewer.imageryLayers.addImageryProvider(
         new Cesium.IonImageryProvider({ assetId: 3 })
       );
+      // Ion 레이어를 맨 아래로
+      while (viewer.imageryLayers.indexOf(baseLayer) > 0)
+        viewer.imageryLayers.lower(baseLayer);
     } else {
-      baseLayer = viewer.imageryLayers.addImageryProvider(
-        new Cesium.UrlTemplateImageryProvider({
-          url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-          subdomains: ['a','b','c'], maximumLevel: 19,
-          credit: '© OpenStreetMap',
-        })
-      );
       document.getElementById('dem-notice').style.display = 'block';
       document.querySelector('.lyr-btn[data-base="ion_satellite"]').classList.remove('active');
       document.querySelector('.lyr-btn[data-base="osm"]').classList.add('active');
