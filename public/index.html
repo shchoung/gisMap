@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>기상재난 시뮬레이터</title>
 
-  <!-- CesiumJS -->
-  <script src="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Cesium.js"></script>
-  <link href="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Widgets/widgets.css" rel="stylesheet" />
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <!-- Google Fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Noto+Sans+KR:wght@300;400;500;700&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
@@ -15,364 +15,195 @@
   <style>
     :root {
       --bg: #030a12;
-      --panel: rgba(5, 18, 32, 0.92);
+      --panel: rgba(5, 18, 32, 0.93);
       --border: rgba(0, 200, 255, 0.18);
       --accent: #00c8ff;
       --accent2: #ff4e4e;
       --accent3: #ffa930;
       --text: #c8e8f8;
       --muted: #4a7a9b;
-      --flood: #1a8fff;
-      --fire: #ff5722;
-      --typhoon: #9c27b0;
-      --cold: #82cfff;
     }
-
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); font-family: 'Noto Sans KR', sans-serif; }
 
-    #cesiumContainer {
-      width: 100%; height: 100%; position: absolute; top: 0; left: 0;
-    }
+    #map { width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 0; }
 
-    /* ── 상단 헤더 ── */
+    /* 지도 타일 선택자 커스텀 숨김 */
+    .leaflet-control-layers { display: none; }
+
+    /* ── 헤더 ── */
     #header {
-      position: absolute; top: 0; left: 0; right: 0;
-      height: 56px;
-      background: linear-gradient(90deg, rgba(3,10,18,0.98) 0%, rgba(0,30,60,0.85) 50%, rgba(3,10,18,0.98) 100%);
+      position: absolute; top: 0; left: 0; right: 0; height: 52px;
+      background: linear-gradient(90deg, rgba(3,10,18,0.97) 0%, rgba(0,30,60,0.88) 50%, rgba(3,10,18,0.97) 100%);
       border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; padding: 0 20px;
-      z-index: 100;
-      backdrop-filter: blur(10px);
+      display: flex; align-items: center; padding: 0 18px;
+      z-index: 1000; backdrop-filter: blur(10px);
     }
+    .logo { font-family: 'Orbitron', monospace; font-size: 16px; font-weight: 900; color: var(--accent); letter-spacing: 3px; text-shadow: 0 0 20px rgba(0,200,255,0.5); }
+    .logo span { color: #fff; }
+    .subtitle { font-family: 'Share Tech Mono', monospace; font-size: 11px; color: var(--muted); margin-left: 14px; letter-spacing: 1px; }
+    #clock { margin-left: auto; font-family: 'Share Tech Mono', monospace; font-size: 13px; color: var(--accent); letter-spacing: 2px; }
 
-    #header .logo {
-      font-family: 'Orbitron', monospace;
-      font-size: 17px; font-weight: 900;
-      color: var(--accent);
-      letter-spacing: 2px;
-      text-shadow: 0 0 20px rgba(0,200,255,0.5);
+    /* ── 지도 타일 선택 ── */
+    #tile-switcher {
+      position: absolute; top: 62px; right: 16px;
+      z-index: 1000; display: flex; gap: 6px;
     }
-    #header .logo span { color: #fff; }
-
-    #header .subtitle {
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 11px; color: var(--muted);
-      margin-left: 16px;
-      letter-spacing: 1px;
+    .tile-btn {
+      font-family: 'Share Tech Mono', monospace; font-size: 10px;
+      padding: 5px 12px; border-radius: 2px; cursor: pointer;
+      border: 1px solid var(--border); color: var(--muted);
+      background: var(--panel); backdrop-filter: blur(8px);
+      transition: all 0.2s; letter-spacing: 1px;
     }
+    .tile-btn:hover { color: #fff; border-color: var(--accent); }
+    .tile-btn.active { color: var(--accent); border-color: var(--accent); background: rgba(0,200,255,0.1); }
 
-    #clock {
-      margin-left: auto;
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 13px; color: var(--accent);
-      letter-spacing: 2px;
-    }
-
-    /* ── 재난 선택 탭 ── */
+    /* ── 재난 탭 ── */
     #disaster-tabs {
-      position: absolute; top: 68px; left: 50%;
-      transform: translateX(-50%);
-      display: flex; gap: 8px;
-      z-index: 100;
+      position: absolute; top: 62px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 6px; z-index: 1000;
     }
-
     .tab {
-      font-family: 'Noto Sans KR', sans-serif;
-      font-size: 13px; font-weight: 500;
-      padding: 8px 20px;
-      border-radius: 2px;
-      cursor: pointer;
-      border: 1px solid transparent;
-      transition: all 0.25s;
-      letter-spacing: 0.5px;
-      white-space: nowrap;
-      color: var(--muted);
-      background: rgba(5, 18, 32, 0.7);
-      border-color: var(--border);
-      backdrop-filter: blur(8px);
+      font-family: 'Noto Sans KR', sans-serif; font-size: 12px; font-weight: 500;
+      padding: 7px 18px; border-radius: 2px; cursor: pointer;
+      border: 1px solid var(--border); color: var(--muted);
+      background: rgba(5,18,32,0.82); backdrop-filter: blur(8px);
+      transition: all 0.2s; white-space: nowrap;
     }
-    .tab:hover { color: #fff; border-color: rgba(0,200,255,0.4); }
-    .tab.active { color: #fff; font-weight: 700; }
-    .tab[data-type="flood"].active   { background: rgba(26,143,255,0.25); border-color: var(--flood); color: #6fc8ff; box-shadow: 0 0 16px rgba(26,143,255,0.3); }
-    .tab[data-type="fire"].active    { background: rgba(255,87,34,0.25);  border-color: var(--fire);  color: #ff9a6c; box-shadow: 0 0 16px rgba(255,87,34,0.3); }
-    .tab[data-type="typhoon"].active { background: rgba(156,39,176,0.25); border-color: var(--typhoon); color: #d096e8; box-shadow: 0 0 16px rgba(156,39,176,0.3); }
-    .tab[data-type="cold"].active    { background: rgba(130,207,255,0.2); border-color: var(--cold);  color: #cceeff; box-shadow: 0 0 16px rgba(130,207,255,0.3); }
+    .tab:hover { color: #fff; }
+    .tab[data-type="flood"].active   { background: rgba(26,143,255,0.25); border-color: #1a8fff; color: #6fc8ff; box-shadow: 0 0 14px rgba(26,143,255,0.3); }
+    .tab[data-type="fire"].active    { background: rgba(255,87,34,0.25);  border-color: #ff5722; color: #ff9a6c; box-shadow: 0 0 14px rgba(255,87,34,0.3); }
+    .tab[data-type="typhoon"].active { background: rgba(156,39,176,0.25); border-color: #9c27b0; color: #d096e8; box-shadow: 0 0 14px rgba(156,39,176,0.3); }
+    .tab[data-type="cold"].active    { background: rgba(130,207,255,0.2); border-color: #82cfff; color: #cceeff; box-shadow: 0 0 14px rgba(130,207,255,0.3); }
 
-    /* ── 왼쪽 컨트롤 패널 ── */
+    /* ── 왼쪽 패널 ── */
     #control-panel {
-      position: absolute; top: 120px; left: 16px; bottom: 20px;
-      width: 280px;
-      z-index: 100;
-      display: flex; flex-direction: column; gap: 10px;
-      overflow-y: auto;
-      scrollbar-width: none;
+      position: absolute; top: 110px; left: 12px; bottom: 16px;
+      width: 264px; z-index: 1000;
+      display: flex; flex-direction: column; gap: 8px;
+      overflow-y: auto; scrollbar-width: none;
     }
     #control-panel::-webkit-scrollbar { display: none; }
 
     .panel-card {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 14px;
-      backdrop-filter: blur(12px);
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 3px; padding: 12px; backdrop-filter: blur(12px);
     }
-
     .card-title {
-      font-family: 'Orbitron', monospace;
-      font-size: 10px; font-weight: 700;
-      color: var(--accent);
-      letter-spacing: 2px;
-      margin-bottom: 12px;
-      text-transform: uppercase;
+      font-family: 'Orbitron', monospace; font-size: 9px; font-weight: 700;
+      color: var(--accent); letter-spacing: 2px; margin-bottom: 10px; text-transform: uppercase;
     }
 
-    /* 도시 선택 */
-    .city-grid {
-      display: grid; grid-template-columns: 1fr 1fr;
-      gap: 6px;
-    }
+    /* 도시 그리드 */
+    .city-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
     .city-btn {
-      font-family: 'Noto Sans KR', sans-serif;
-      font-size: 12px;
-      padding: 7px 8px;
-      background: rgba(0,200,255,0.05);
-      border: 1px solid var(--border);
-      border-radius: 2px;
-      color: var(--text);
-      cursor: pointer;
-      transition: all 0.2s;
-      text-align: center;
+      font-size: 12px; padding: 6px 8px;
+      background: rgba(0,200,255,0.05); border: 1px solid var(--border);
+      border-radius: 2px; color: var(--text); cursor: pointer;
+      transition: all 0.2s; text-align: center;
     }
     .city-btn:hover { background: rgba(0,200,255,0.12); border-color: var(--accent); }
     .city-btn.active { background: rgba(0,200,255,0.2); border-color: var(--accent); color: #fff; font-weight: 700; }
 
     /* 슬라이더 */
-    .param-row {
-      margin-bottom: 12px;
-    }
-    .param-label {
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 11px; color: var(--muted);
-      display: flex; justify-content: space-between;
-      margin-bottom: 5px;
-    }
+    .param-row { margin-bottom: 10px; }
+    .param-label { font-family: 'Share Tech Mono', monospace; font-size: 11px; color: var(--muted); display: flex; justify-content: space-between; margin-bottom: 4px; }
     .param-value { color: var(--accent); font-weight: bold; }
-
     input[type="range"] {
-      width: 100%; height: 4px;
-      -webkit-appearance: none;
-      background: linear-gradient(90deg, var(--accent) var(--pct, 50%), rgba(0,200,255,0.15) var(--pct, 50%));
+      width: 100%; height: 4px; -webkit-appearance: none;
+      background: linear-gradient(90deg, var(--accent) var(--pct,50%), rgba(0,200,255,0.15) var(--pct,50%));
       border-radius: 2px; outline: none; cursor: pointer;
     }
     input[type="range"]::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      width: 14px; height: 14px;
-      border-radius: 50%;
-      background: var(--accent);
-      box-shadow: 0 0 8px rgba(0,200,255,0.6);
+      -webkit-appearance: none; width: 13px; height: 13px;
+      border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px rgba(0,200,255,0.6);
     }
 
     /* 버튼 */
     .run-btn {
-      width: 100%;
-      padding: 11px;
-      font-family: 'Orbitron', monospace;
-      font-size: 12px; font-weight: 700;
-      letter-spacing: 2px;
-      border: none; border-radius: 2px;
-      cursor: pointer;
-      transition: all 0.2s;
-      position: relative; overflow: hidden;
+      width: 100%; padding: 10px;
+      font-family: 'Orbitron', monospace; font-size: 11px; font-weight: 700;
+      letter-spacing: 2px; border: none; border-radius: 2px; cursor: pointer; transition: all 0.2s;
     }
-    .run-btn::after {
-      content: ''; position: absolute;
-      top: -50%; left: -60%; width: 40%; height: 200%;
-      background: rgba(255,255,255,0.15);
-      transform: skewX(-15deg);
-      transition: left 0.4s;
-    }
-    .run-btn:hover::after { left: 120%; }
-
-    .run-btn.flood   { background: linear-gradient(90deg, #0d5fa0, #1a8fff); color: #fff; }
-    .run-btn.fire    { background: linear-gradient(90deg, #b03010, #ff5722); color: #fff; }
-    .run-btn.typhoon { background: linear-gradient(90deg, #5a1070, #9c27b0); color: #fff; }
-    .run-btn.cold    { background: linear-gradient(90deg, #2a6080, #82cfff); color: #fff; }
+    .run-btn.flood   { background: linear-gradient(90deg,#0d5fa0,#1a8fff); color:#fff; }
+    .run-btn.fire    { background: linear-gradient(90deg,#b03010,#ff5722); color:#fff; }
+    .run-btn.typhoon { background: linear-gradient(90deg,#5a1070,#9c27b0); color:#fff; }
+    .run-btn.cold    { background: linear-gradient(90deg,#2a6080,#82cfff); color:#fff; }
+    .run-btn:hover { filter: brightness(1.15); }
 
     .stop-btn {
-      width: 100%; padding: 8px;
-      font-family: 'Orbitron', monospace;
-      font-size: 10px; letter-spacing: 1px;
-      background: rgba(255,78,78,0.15);
-      border: 1px solid rgba(255,78,78,0.4);
-      color: var(--accent2); border-radius: 2px;
-      cursor: pointer; transition: all 0.2s;
+      width: 100%; padding: 7px; margin-top: 6px;
+      font-family: 'Orbitron', monospace; font-size: 9px; letter-spacing: 1px;
+      background: rgba(255,78,78,0.1); border: 1px solid rgba(255,78,78,0.35);
+      color: var(--accent2); border-radius: 2px; cursor: pointer; transition: all 0.2s;
     }
-    .stop-btn:hover { background: rgba(255,78,78,0.3); }
+    .stop-btn:hover { background: rgba(255,78,78,0.25); }
 
-    /* ── 오른쪽 정보 패널 ── */
+    /* ── 오른쪽 패널 ── */
     #info-panel {
-      position: absolute; top: 120px; right: 16px;
-      width: 240px;
-      z-index: 100;
-      display: flex; flex-direction: column; gap: 10px;
+      position: absolute; top: 110px; right: 12px;
+      width: 230px; z-index: 1000;
+      display: flex; flex-direction: column; gap: 8px;
     }
 
-    .weather-grid {
-      display: grid; grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
+    .weather-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .weather-item { background: rgba(0,200,255,0.05); border: 1px solid var(--border); border-radius: 3px; padding: 9px 8px; text-align: center; }
+    .wi-label { font-family: 'Share Tech Mono', monospace; font-size: 9px; color: var(--muted); letter-spacing: 1px; margin-bottom: 3px; }
+    .wi-value { font-family: 'Orbitron', monospace; font-size: 15px; font-weight: 700; color: var(--accent); }
+    .wi-unit  { font-family: 'Share Tech Mono', monospace; font-size: 9px; color: var(--muted); }
 
-    .weather-item {
-      background: rgba(0,200,255,0.05);
-      border: 1px solid var(--border);
-      border-radius: 3px;
-      padding: 10px 8px;
-      text-align: center;
-    }
-    .weather-item .wi-label {
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 9px; color: var(--muted);
-      letter-spacing: 1px; margin-bottom: 4px;
-    }
-    .weather-item .wi-value {
-      font-family: 'Orbitron', monospace;
-      font-size: 16px; font-weight: 700;
-      color: var(--accent);
-    }
-    .weather-item .wi-unit {
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 9px; color: var(--muted);
-    }
-
-    /* 위험도 게이지 */
-    .risk-bar-wrap {
-      background: rgba(0,0,0,0.3);
-      border-radius: 2px; height: 8px; overflow: hidden;
-      margin-top: 6px;
-    }
-    .risk-bar {
-      height: 100%; border-radius: 2px;
-      transition: width 0.8s ease, background 0.8s ease;
-    }
-
-    .risk-label {
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 11px;
-      display: flex; justify-content: space-between;
-      color: var(--muted);
-      margin-top: 4px;
-    }
+    /* 위험도 */
+    .risk-bar-wrap { background: rgba(0,0,0,0.3); border-radius: 2px; height: 7px; overflow: hidden; margin-top: 5px; }
+    .risk-bar { height: 100%; border-radius: 2px; transition: width 0.8s ease, background 0.8s ease; width: 0%; }
+    .risk-label { font-family: 'Share Tech Mono', monospace; font-size: 10px; display: flex; justify-content: space-between; color: var(--muted); margin-top: 3px; }
     .risk-level { font-weight: bold; }
     .risk-level.low    { color: #4caf50; }
     .risk-level.medium { color: #ff9800; }
     .risk-level.high   { color: #ff5722; }
     .risk-level.extreme { color: #f44336; animation: blink 0.8s infinite; }
-
-    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.4} }
-
-    /* 로그 */
-    #sim-log {
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 10px;
-      color: var(--muted);
-      max-height: 120px;
-      overflow-y: auto;
-      scrollbar-width: thin;
-      scrollbar-color: var(--border) transparent;
-    }
-    #sim-log .log-entry { padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
-    #sim-log .log-entry.warn  { color: var(--accent3); }
-    #sim-log .log-entry.alert { color: var(--accent2); }
-    #sim-log .log-entry.info  { color: var(--accent); }
+    @keyframes blink { 0%,100%{opacity:1}50%{opacity:0.3} }
 
     /* 범례 */
-    .legend-item {
-      display: flex; align-items: center; gap: 8px;
-      font-family: 'Noto Sans KR', sans-serif;
-      font-size: 11px; color: var(--text);
-      margin-bottom: 6px;
-    }
-    .legend-color {
-      width: 16px; height: 8px; border-radius: 1px; flex-shrink: 0;
-    }
+    .legend-item { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text); margin-bottom: 5px; }
+    .legend-color { width: 16px; height: 8px; border-radius: 1px; flex-shrink: 0; }
 
-    /* 상태 표시 */
+    /* 로그 */
+    #sim-log { font-family: 'Share Tech Mono', monospace; font-size: 10px; color: var(--muted); max-height: 110px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+    .log-entry { padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+    .log-entry.warn  { color: var(--accent3); }
+    .log-entry.alert { color: var(--accent2); }
+    .log-entry.info  { color: var(--accent); }
+
+    /* 하단 상태 */
     #sim-status {
-      position: absolute; bottom: 24px; left: 50%;
-      transform: translateX(-50%);
-      font-family: 'Orbitron', monospace;
-      font-size: 11px; letter-spacing: 3px;
-      color: var(--accent);
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 2px;
-      padding: 6px 20px;
-      z-index: 100;
-      backdrop-filter: blur(8px);
-      opacity: 0; transition: opacity 0.4s;
-    }
-    #sim-status.visible { opacity: 1; }
-
-    /* 로딩 오버레이 */
-    #loading {
-      position: absolute; inset: 0;
-      background: var(--bg);
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      z-index: 999;
-      transition: opacity 0.6s;
-    }
-    #loading .load-title {
-      font-family: 'Orbitron', monospace;
-      font-size: 24px; font-weight: 900;
-      color: var(--accent);
-      letter-spacing: 4px;
-      margin-bottom: 8px;
-      text-shadow: 0 0 30px rgba(0,200,255,0.6);
-    }
-    #loading .load-sub {
-      font-family: 'Share Tech Mono', monospace;
-      font-size: 12px; color: var(--muted);
-      letter-spacing: 2px; margin-bottom: 32px;
-    }
-    #loading .load-bar-wrap {
-      width: 280px; height: 3px;
-      background: rgba(0,200,255,0.1);
-      border-radius: 2px; overflow: hidden;
-    }
-    #loading .load-bar {
-      height: 100%; width: 0%;
-      background: linear-gradient(90deg, var(--accent), #fff);
-      border-radius: 2px;
-      transition: width 0.3s;
+      position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+      font-family: 'Orbitron', monospace; font-size: 10px; letter-spacing: 3px; color: var(--accent);
+      background: var(--panel); border: 1px solid var(--border); border-radius: 2px;
+      padding: 5px 18px; z-index: 1000; backdrop-filter: blur(8px);
     }
 
-    /* Cesium 기본 UI 숨김 */
-    .cesium-widget-credits { display: none !important; }
-    .cesium-viewer-toolbar { display: none !important; }
-    .cesium-viewer-animationContainer { display: none !important; }
-    .cesium-viewer-timelineContainer { display: none !important; }
-    .cesium-viewer-bottom { display: none !important; }
+    /* Leaflet 커스텀 */
+    .leaflet-container { background: #060e1a; }
   </style>
 </head>
 <body>
 
-<!-- 로딩 -->
-<div id="loading">
-  <div class="load-title">DISASTER SIM</div>
-  <div class="load-sub">기상재난 시뮬레이터 초기화 중...</div>
-  <div class="load-bar-wrap"><div class="load-bar" id="loadBar"></div></div>
-</div>
-
-<!-- Cesium 뷰어 -->
-<div id="cesiumContainer"></div>
+<div id="map"></div>
 
 <!-- 헤더 -->
 <div id="header">
   <div class="logo">DISASTER<span>SIM</span></div>
-  <div class="subtitle">// 기상재난 시뮬레이션 시스템 v1.0</div>
+  <div class="subtitle">// 기상재난 시뮬레이션 v2.0</div>
   <div id="clock">--:--:--</div>
+</div>
+
+<!-- 지도 타일 선택 -->
+<div id="tile-switcher">
+  <div class="tile-btn active" onclick="setTile('osm',this)">OSM</div>
+  <div class="tile-btn" onclick="setTile('esri',this)">위성</div>
+  <div class="tile-btn" onclick="setTile('carto',this)">다크</div>
+  <div class="tile-btn" onclick="setTile('topo',this)">지형</div>
 </div>
 
 <!-- 재난 탭 -->
@@ -385,27 +216,19 @@
 
 <!-- 왼쪽 컨트롤 -->
 <div id="control-panel">
-  <!-- 도시 선택 -->
   <div class="panel-card">
     <div class="card-title">📍 지역 선택</div>
     <div class="city-grid" id="cityGrid"></div>
   </div>
-
-  <!-- 시뮬레이션 파라미터 -->
-  <div class="panel-card" id="paramCard">
-    <div class="card-title">⚙️ 시뮬레이션 파라미터</div>
+  <div class="panel-card">
+    <div class="card-title">⚙️ 파라미터</div>
     <div id="paramControls"></div>
   </div>
-
-  <!-- 실행 버튼 -->
   <div class="panel-card">
     <button class="run-btn flood" id="runBtn" onclick="runSimulation()">▶ 시뮬레이션 시작</button>
-    <br><br>
     <button class="stop-btn" onclick="stopSimulation()">■ 초기화</button>
   </div>
-
-  <!-- 범례 -->
-  <div class="panel-card" id="legendCard">
+  <div class="panel-card">
     <div class="card-title">📊 범례</div>
     <div id="legendContent"></div>
   </div>
@@ -413,165 +236,127 @@
 
 <!-- 오른쪽 정보 -->
 <div id="info-panel">
-  <!-- 실시간 기상 -->
   <div class="panel-card">
-    <div class="card-title">🌡️ 실시간 기상 데이터</div>
-    <div class="weather-grid" id="weatherGrid">
+    <div class="card-title">🌡️ 실시간 기상</div>
+    <div class="weather-grid">
       <div class="weather-item"><div class="wi-label">TEMP</div><div class="wi-value" id="wTemp">--</div><div class="wi-unit">°C</div></div>
       <div class="weather-item"><div class="wi-label">HUMIDITY</div><div class="wi-value" id="wHumid">--</div><div class="wi-unit">%</div></div>
       <div class="weather-item"><div class="wi-label">WIND</div><div class="wi-value" id="wWind">--</div><div class="wi-unit">m/s</div></div>
       <div class="weather-item"><div class="wi-label">PRECIP</div><div class="wi-value" id="wPrecip">--</div><div class="wi-unit">mm</div></div>
     </div>
   </div>
-
-  <!-- 위험도 -->
   <div class="panel-card">
     <div class="card-title">⚠️ 위험도 분석</div>
     <div id="riskBars"></div>
   </div>
-
-  <!-- 시뮬레이션 로그 -->
   <div class="panel-card">
     <div class="card-title">📟 시스템 로그</div>
     <div id="sim-log"></div>
   </div>
 </div>
 
-<!-- 하단 상태 -->
 <div id="sim-status">시스템 대기 중</div>
 
 <script>
-// ═══════════════════════════════════════
+// ═══════════════════════════════
 //  CONFIG
-// ═══════════════════════════════════════
-Cesium.Ion.defaultAccessToken = 'CESIUM_TOKEN';
-
+// ═══════════════════════════════
 const CITIES = [
-  { name: '서울', lat: 37.5665, lon: 126.9780 },
-  { name: '부산', lat: 35.1796, lon: 129.0756 },
-  { name: '인천', lat: 37.4563, lon: 126.7052 },
-  { name: '대구', lat: 35.8714, lon: 128.6014 },
-  { name: '광주', lat: 35.1595, lon: 126.8526 },
-  { name: '대전', lat: 36.3504, lon: 127.3845 },
-  { name: '제주', lat: 33.4996, lon: 126.5312 },
-  { name: '강릉', lat: 37.7519, lon: 128.8761 },
+  { name:'서울', lat:37.5665, lon:126.9780 },
+  { name:'부산', lat:35.1796, lon:129.0756 },
+  { name:'인천', lat:37.4563, lon:126.7052 },
+  { name:'대구', lat:35.8714, lon:128.6014 },
+  { name:'광주', lat:35.1595, lon:126.8526 },
+  { name:'대전', lat:36.3504, lon:127.3845 },
+  { name:'제주', lat:33.4996, lon:126.5312 },
+  { name:'강릉', lat:37.7519, lon:128.8761 },
 ];
 
+const TILES = {
+  osm:  { url:'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attr:'© OpenStreetMap' },
+  esri: { url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr:'© Esri' },
+  carto:{ url:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', attr:'© Carto' },
+  topo: { url:'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', attr:'© OpenTopoMap' },
+};
+
 const DISASTER_PARAMS = {
-  flood: [
-    { id: 'rainfall', label: '강수량', unit: 'mm/h', min: 10, max: 200, val: 80, step: 5 },
-    { id: 'duration', label: '지속시간', unit: '시간', min: 1, max: 72, val: 12, step: 1 },
-    { id: 'spread', label: '확산반경', unit: 'km', min: 1, max: 30, val: 10, step: 1 },
-  ],
-  fire: [
-    { id: 'windspeed', label: '풍속', unit: 'm/s', min: 1, max: 30, val: 10, step: 1 },
-    { id: 'humidity', label: '습도', unit: '%', min: 5, max: 60, val: 20, step: 5 },
-    { id: 'spread', label: '확산속도', unit: 'km/h', min: 0.5, max: 20, val: 5, step: 0.5 },
-  ],
-  typhoon: [
-    { id: 'maxwind', label: '최대풍속', unit: 'm/s', min: 17, max: 90, val: 40, step: 1 },
-    { id: 'radius', label: '강풍반경', unit: 'km', min: 50, max: 500, val: 200, step: 10 },
-    { id: 'speed', label: '이동속도', unit: 'km/h', min: 5, max: 60, val: 20, step: 5 },
-  ],
-  cold: [
-    { id: 'mintemp', label: '최저기온', unit: '°C', min: -30, max: -5, val: -15, step: 1 },
-    { id: 'snow', label: '적설량', unit: 'cm', min: 0, max: 100, val: 30, step: 5 },
-    { id: 'duration', label: '지속시간', unit: '일', min: 1, max: 14, val: 3, step: 1 },
-  ],
+  flood:   [ {id:'rainfall',label:'강수량',unit:'mm/h',min:10,max:200,val:80,step:5}, {id:'duration',label:'지속시간',unit:'시간',min:1,max:72,val:12,step:1}, {id:'spread',label:'확산반경',unit:'km',min:1,max:30,val:10,step:1} ],
+  fire:    [ {id:'windspeed',label:'풍속',unit:'m/s',min:1,max:30,val:10,step:1}, {id:'humidity',label:'습도',unit:'%',min:5,max:60,val:20,step:5}, {id:'spread',label:'확산속도',unit:'km/h',min:0.5,max:20,val:5,step:0.5} ],
+  typhoon: [ {id:'maxwind',label:'최대풍속',unit:'m/s',min:17,max:90,val:40,step:1}, {id:'radius',label:'강풍반경',unit:'km',min:50,max:500,val:200,step:10}, {id:'speed',label:'이동속도',unit:'km/h',min:5,max:60,val:20,step:5} ],
+  cold:    [ {id:'mintemp',label:'최저기온',unit:'°C',min:-30,max:-5,val:-15,step:1}, {id:'snow',label:'적설량',unit:'cm',min:0,max:100,val:30,step:5}, {id:'duration',label:'지속일수',unit:'일',min:1,max:14,val:3,step:1} ],
 };
 
 const LEGENDS = {
-  flood: [
-    { color: '#1a8fff', label: '침수 위험 지역 (중심)' },
-    { color: '#4db8ff88', label: '침수 확산 영역' },
-    { color: '#00e5ff44', label: '경계 침수 예상' },
-  ],
-  fire: [
-    { color: '#ff1a00', label: '화재 발생 지점' },
-    { color: '#ff572288', label: '화재 확산 영역' },
-    { color: '#ff980044', label: '산불 위험 경계선' },
-  ],
-  typhoon: [
-    { color: '#9c27b0', label: '태풍 중심 (눈)' },
-    { color: '#e91e6388', label: '강풍 반경 (위험)' },
-    { color: '#9c27b044', label: '영향권 (주의)' },
-  ],
-  cold: [
-    { color: '#82cfff', label: '한파 특보 지역' },
-    { color: '#b3e5fc88', label: '폭설 적설 지역' },
-    { color: '#e1f5fe44', label: '강풍 동반 지역' },
-  ],
+  flood:   [ {color:'rgba(26,143,255,0.8)',label:'침수 위험 중심'}, {color:'rgba(77,184,255,0.5)',label:'침수 확산 영역'}, {color:'rgba(0,229,255,0.25)',label:'경계 침수 예상'} ],
+  fire:    [ {color:'rgba(255,26,0,0.85)',label:'화재 발생 지점'}, {color:'rgba(255,87,34,0.55)',label:'화재 확산 영역'}, {color:'rgba(255,152,0,0.3)',label:'산불 위험 경계'} ],
+  typhoon: [ {color:'rgba(156,39,176,0.9)',label:'태풍 중심 (눈)'}, {color:'rgba(233,30,99,0.5)',label:'강풍 반경 위험'}, {color:'rgba(156,39,176,0.25)',label:'영향권 주의'} ],
+  cold:    [ {color:'rgba(130,207,255,0.7)',label:'한파 특보 지역'}, {color:'rgba(179,229,252,0.5)',label:'폭설 적설 지역'}, {color:'rgba(225,245,254,0.25)',label:'강풍 동반 지역'} ],
 };
 
-// ═══════════════════════════════════════
+// ═══════════════════════════════
 //  STATE
-// ═══════════════════════════════════════
-let viewer = null;
+// ═══════════════════════════════
+let map, tileLayer;
 let currentType = 'flood';
 let currentCity = CITIES[0];
-let simRunning = false;
-let simEntities = [];
+let simLayers   = [];
 let simInterval = null;
+let simRunning  = false;
 let paramValues = {};
 let weatherData = {};
+let currentTileKey = 'osm';
 
-// ═══════════════════════════════════════
+// ═══════════════════════════════
 //  INIT
-// ═══════════════════════════════════════
-async function init() {
-  updateLoadBar(20);
+// ═══════════════════════════════
+function init() {
+  map = L.map('map', { zoomControl: false, attributionControl: true }).setView([36.5, 127.5], 7);
+  tileLayer = L.tileLayer(TILES.osm.url, { attribution: TILES.osm.attr, maxZoom: 18 }).addTo(map);
 
-  viewer = new Cesium.Viewer('cesiumContainer', {
-    terrainProvider: await Cesium.createWorldTerrainAsync({ requestWaterMask: true }),
-    imageryProvider: new Cesium.IonImageryProvider({ assetId: 3 }),
-    animation: false,
-    baseLayerPicker: false,
-    fullscreenButton: false,
-    vrButton: false,
-    geocoder: false,
-    homeButton: false,
-    infoBox: false,
-    sceneModePicker: false,
-    selectionIndicator: false,
-    timeline: false,
-    navigationHelpButton: false,
-  });
-
-  viewer.scene.globe.enableLighting = true;
-  viewer.scene.fog.enabled = true;
-  viewer.scene.fog.density = 0.00025;
-  viewer.scene.skyAtmosphere.show = true;
-
-  updateLoadBar(50);
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
 
   renderCityGrid();
   renderParams();
   renderLegend();
   renderRiskBars();
   startClock();
+  fetchWeather(currentCity);
 
-  updateLoadBar(80);
-  await flyToCity(currentCity, false);
-  await fetchWeather(currentCity);
-  updateLoadBar(100);
-
-  setTimeout(() => {
-    document.getElementById('loading').style.opacity = '0';
-    setTimeout(() => document.getElementById('loading').style.display = 'none', 600);
-  }, 500);
-
+  setStatus('시스템 준비 완료');
   addLog('info', '시스템 초기화 완료');
   addLog('info', `기본 지역: ${currentCity.name}`);
-  setStatus('시스템 준비 완료');
+
+  // 탭 이벤트
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      currentType = tab.dataset.type;
+      stopSimulation();
+      renderParams();
+      renderLegend();
+      renderRiskBars();
+      document.getElementById('runBtn').className = `run-btn ${currentType}`;
+      addLog('info', `재난 유형: ${tab.textContent.trim()}`);
+    });
+  });
 }
 
-function updateLoadBar(pct) {
-  document.getElementById('loadBar').style.width = pct + '%';
+// ═══════════════════════════════
+//  TILE SWITCHER
+// ═══════════════════════════════
+function setTile(key, el) {
+  currentTileKey = key;
+  document.querySelectorAll('.tile-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  map.removeLayer(tileLayer);
+  tileLayer = L.tileLayer(TILES[key].url, { attribution: TILES[key].attr, maxZoom: 18 }).addTo(map);
+  addLog('info', `지도 변경: ${key.toUpperCase()}`);
 }
 
-// ═══════════════════════════════════════
-//  UI BUILDERS
-// ═══════════════════════════════════════
+// ═══════════════════════════════
+//  UI
+// ═══════════════════════════════
 function renderCityGrid() {
   const grid = document.getElementById('cityGrid');
   grid.innerHTML = '';
@@ -579,92 +364,51 @@ function renderCityGrid() {
     const btn = document.createElement('div');
     btn.className = 'city-btn' + (i === 0 ? ' active' : '');
     btn.textContent = city.name;
-    btn.onclick = () => selectCity(city, btn);
+    btn.onclick = () => {
+      document.querySelectorAll('.city-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentCity = city;
+      stopSimulation();
+      map.flyTo([city.lat, city.lon], 9, { duration: 1.5 });
+      fetchWeather(city);
+      addLog('info', `지역 변경: ${city.name}`);
+    };
     grid.appendChild(btn);
   });
 }
 
 function renderParams() {
   const params = DISASTER_PARAMS[currentType];
-  const container = document.getElementById('paramControls');
-  container.innerHTML = '';
+  const c = document.getElementById('paramControls');
+  c.innerHTML = '';
   paramValues = {};
   params.forEach(p => {
     paramValues[p.id] = p.val;
     const pct = ((p.val - p.min) / (p.max - p.min) * 100).toFixed(0);
-    container.innerHTML += `
+    c.innerHTML += `
       <div class="param-row">
-        <div class="param-label">
-          <span>${p.label}</span>
-          <span class="param-value" id="pv_${p.id}">${p.val} ${p.unit}</span>
-        </div>
-        <input type="range" min="${p.min}" max="${p.max}" step="${p.step}" value="${p.val}"
-          style="--pct:${pct}%"
-          oninput="updateParam('${p.id}','${p.unit}',this)"
-          id="pr_${p.id}" />
+        <div class="param-label"><span>${p.label}</span><span class="param-value" id="pv_${p.id}">${p.val} ${p.unit}</span></div>
+        <input type="range" min="${p.min}" max="${p.max}" step="${p.step}" value="${p.val}" style="--pct:${pct}%"
+          oninput="updateParam('${p.id}','${p.unit}',this)" />
       </div>`;
   });
 }
 
 function renderLegend() {
-  const items = LEGENDS[currentType];
-  const c = document.getElementById('legendContent');
-  c.innerHTML = items.map(l => `
-    <div class="legend-item">
-      <div class="legend-color" style="background:${l.color}"></div>
-      <span>${l.label}</span>
-    </div>`).join('');
+  document.getElementById('legendContent').innerHTML =
+    LEGENDS[currentType].map(l => `<div class="legend-item"><div class="legend-color" style="background:${l.color}"></div><span>${l.label}</span></div>`).join('');
 }
 
 function renderRiskBars() {
-  const risks = [
-    { id: 'risk_life', label: '인명 위험' },
-    { id: 'risk_infra', label: '시설 피해' },
-    { id: 'risk_eco', label: '경제 손실' },
-  ];
-  const c = document.getElementById('riskBars');
-  c.innerHTML = risks.map(r => `
-    <div style="margin-bottom:10px">
-      <div class="risk-label">
-        <span>${r.label}</span>
-        <span class="risk-level" id="${r.id}_lv">대기</span>
-      </div>
-      <div class="risk-bar-wrap">
-        <div class="risk-bar" id="${r.id}" style="width:0%;background:#4caf50"></div>
-      </div>
+  document.getElementById('riskBars').innerHTML = [
+    { id:'risk_life', label:'인명 위험' },
+    { id:'risk_infra', label:'시설 피해' },
+    { id:'risk_eco', label:'경제 손실' },
+  ].map(r => `
+    <div style="margin-bottom:9px">
+      <div class="risk-label"><span>${r.label}</span><span class="risk-level" id="${r.id}_lv">대기</span></div>
+      <div class="risk-bar-wrap"><div class="risk-bar" id="${r.id}"></div></div>
     </div>`).join('');
-}
-
-// ═══════════════════════════════════════
-//  INTERACTIONS
-// ═══════════════════════════════════════
-document.querySelectorAll('.tab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    tab.classList.add('active');
-    currentType = tab.dataset.type;
-    stopSimulation();
-    renderParams();
-    renderLegend();
-    renderRiskBars();
-    updateRunBtn();
-    addLog('info', `재난 유형 변경: ${tab.textContent.trim()}`);
-  });
-});
-
-function updateRunBtn() {
-  const btn = document.getElementById('runBtn');
-  btn.className = `run-btn ${currentType}`;
-}
-
-function selectCity(city, el) {
-  currentCity = city;
-  document.querySelectorAll('.city-btn').forEach(b => b.classList.remove('active'));
-  el.classList.add('active');
-  stopSimulation();
-  flyToCity(city, true);
-  fetchWeather(city);
-  addLog('info', `지역 변경: ${city.name}`);
 }
 
 function updateParam(id, unit, input) {
@@ -675,421 +419,232 @@ function updateParam(id, unit, input) {
   input.style.setProperty('--pct', pct + '%');
 }
 
-// ═══════════════════════════════════════
-//  CESIUM CAMERA
-// ═══════════════════════════════════════
-async function flyToCity(city, animate) {
-  viewer.camera.flyTo({
-    destination: Cesium.Cartesian3.fromDegrees(city.lon, city.lat - 0.3, 80000),
-    orientation: { heading: Cesium.Math.toRadians(0), pitch: Cesium.Math.toRadians(-45), roll: 0 },
-    duration: animate ? 2.0 : 0,
-  });
-}
-
-// ═══════════════════════════════════════
-//  WEATHER API (Open-Meteo)
-// ═══════════════════════════════════════
+// ═══════════════════════════════
+//  WEATHER API
+// ═══════════════════════════════
 async function fetchWeather(city) {
-  addLog('info', `기상 데이터 요청: ${city.name}...`);
   setStatus('기상 데이터 수신 중...');
+  addLog('info', `기상 조회: ${city.name}`);
   try {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${city.lat}&longitude=${city.lon}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation&wind_speed_unit=ms&timezone=Asia%2FSeoul`;
     const res = await fetch(url);
     const data = await res.json();
     const c = data.current;
-    weatherData = {
-      temp: c.temperature_2m,
-      humid: c.relative_humidity_2m,
-      wind: c.wind_speed_10m,
-      precip: c.precipitation,
-    };
-    document.getElementById('wTemp').textContent = weatherData.temp?.toFixed(1) ?? '--';
-    document.getElementById('wHumid').textContent = weatherData.humid ?? '--';
-    document.getElementById('wWind').textContent = weatherData.wind?.toFixed(1) ?? '--';
-    document.getElementById('wPrecip').textContent = weatherData.precip?.toFixed(1) ?? '--';
-    addLog('info', `기상 수신 완료 — 기온 ${weatherData.temp}°C / 풍속 ${weatherData.wind}m/s`);
+    weatherData = { temp: c.temperature_2m, humid: c.relative_humidity_2m, wind: c.wind_speed_10m, precip: c.precipitation };
+    document.getElementById('wTemp').textContent  = weatherData.temp?.toFixed(1)  ?? '--';
+    document.getElementById('wHumid').textContent = weatherData.humid             ?? '--';
+    document.getElementById('wWind').textContent  = weatherData.wind?.toFixed(1)  ?? '--';
+    document.getElementById('wPrecip').textContent= weatherData.precip?.toFixed(1)?? '--';
+    addLog('info', `기상 수신 완료 — ${weatherData.temp}°C / ${weatherData.wind}m/s`);
     setStatus('기상 데이터 수신 완료');
     computeRisk();
-  } catch (e) {
-    addLog('warn', '기상 API 연결 실패 — 기본값 사용');
+  } catch(e) {
+    addLog('warn', '기상 API 오류 — 기본값 사용');
     setStatus('API 오류 (오프라인 모드)');
   }
 }
 
-// ═══════════════════════════════════════
-//  RISK CALCULATION
-// ═══════════════════════════════════════
+// ═══════════════════════════════
+//  RISK
+// ═══════════════════════════════
 function computeRisk() {
   let life = 0, infra = 0, eco = 0;
-
   if (currentType === 'flood') {
-    const rain = paramValues.rainfall ?? 80;
-    const dur  = paramValues.duration ?? 12;
-    life  = Math.min(100, rain * 0.4 + dur * 0.8);
-    infra = Math.min(100, rain * 0.5 + dur * 1.0);
-    eco   = Math.min(100, rain * 0.3 + dur * 0.6);
+    const r = paramValues.rainfall??80, d = paramValues.duration??12;
+    life=Math.min(100,r*0.4+d*0.8); infra=Math.min(100,r*0.5+d*1.0); eco=Math.min(100,r*0.3+d*0.6);
   } else if (currentType === 'fire') {
-    const wind = paramValues.windspeed ?? 10;
-    const hum  = paramValues.humidity ?? 20;
-    life  = Math.min(100, wind * 2.5 + (60 - hum) * 0.8);
-    infra = Math.min(100, wind * 2.0 + (60 - hum) * 1.0);
-    eco   = Math.min(100, wind * 1.5 + (60 - hum) * 0.6);
+    const w = paramValues.windspeed??10, h = paramValues.humidity??20;
+    life=Math.min(100,w*2.5+(60-h)*0.8); infra=Math.min(100,w*2.0+(60-h)*1.0); eco=Math.min(100,w*1.5+(60-h)*0.6);
   } else if (currentType === 'typhoon') {
-    const mw = paramValues.maxwind ?? 40;
-    life  = Math.min(100, mw * 1.5);
-    infra = Math.min(100, mw * 2.0);
-    eco   = Math.min(100, mw * 1.2);
+    const m = paramValues.maxwind??40;
+    life=Math.min(100,m*1.5); infra=Math.min(100,m*2.0); eco=Math.min(100,m*1.2);
   } else if (currentType === 'cold') {
-    const t = Math.abs(paramValues.mintemp ?? 15);
-    const s = paramValues.snow ?? 30;
-    life  = Math.min(100, t * 2.5 + s * 0.3);
-    infra = Math.min(100, t * 1.5 + s * 0.8);
-    eco   = Math.min(100, t * 1.2 + s * 0.5);
+    const t = Math.abs(paramValues.mintemp??15), s = paramValues.snow??30;
+    life=Math.min(100,t*2.5+s*0.3); infra=Math.min(100,t*1.5+s*0.8); eco=Math.min(100,t*1.2+s*0.5);
   }
-
-  // 실제 기상 보정
   if (weatherData.precip > 5) life = Math.min(100, life * 1.2);
-  if (weatherData.wind > 15)  infra = Math.min(100, infra * 1.15);
-
-  setRiskBar('risk_life', life);
-  setRiskBar('risk_infra', infra);
-  setRiskBar('risk_eco', eco);
+  if (weatherData.wind  > 15) infra = Math.min(100, infra * 1.15);
+  setRiskBar('risk_life', life); setRiskBar('risk_infra', infra); setRiskBar('risk_eco', eco);
 }
 
 function setRiskBar(id, pct) {
-  const bar = document.getElementById(id);
-  const lv  = document.getElementById(id + '_lv');
+  const bar = document.getElementById(id), lv = document.getElementById(id + '_lv');
   bar.style.width = pct + '%';
-
-  if (pct < 30) {
-    bar.style.background = '#4caf50'; lv.className = 'risk-level low'; lv.textContent = '낮음';
-  } else if (pct < 60) {
-    bar.style.background = '#ff9800'; lv.className = 'risk-level medium'; lv.textContent = '보통';
-  } else if (pct < 80) {
-    bar.style.background = '#ff5722'; lv.className = 'risk-level high'; lv.textContent = '높음';
-  } else {
-    bar.style.background = '#f44336'; lv.className = 'risk-level extreme'; lv.textContent = '위험!';
-  }
+  if (pct < 30)      { bar.style.background='#4caf50'; lv.className='risk-level low';    lv.textContent='낮음'; }
+  else if (pct < 60) { bar.style.background='#ff9800'; lv.className='risk-level medium'; lv.textContent='보통'; }
+  else if (pct < 80) { bar.style.background='#ff5722'; lv.className='risk-level high';   lv.textContent='높음'; }
+  else               { bar.style.background='#f44336'; lv.className='risk-level extreme';lv.textContent='위험!'; }
 }
 
-// ═══════════════════════════════════════
-//  SIMULATION ENGINE
-// ═══════════════════════════════════════
+// ═══════════════════════════════
+//  SIMULATION
+// ═══════════════════════════════
 function runSimulation() {
-  if (simRunning) return;
+  stopSimulation(true);
   simRunning = true;
-  stopSimulation(true); // 이전 엔티티 제거
-  simRunning = true;
-
   computeRisk();
-  addLog('alert', `▶ ${currentCity.name} ${getTypeName()} 시뮬레이션 시작`);
-  setStatus(`시뮬레이션 진행 중 — ${currentCity.name} ${getTypeName()}`);
-
-  const handlers = { flood: simFlood, fire: simFire, typhoon: simTyphoon, cold: simCold };
+  const names = { flood:'홍수', fire:'산불', typhoon:'태풍', cold:'한파' };
+  addLog('alert', `▶ ${currentCity.name} ${names[currentType]} 시뮬레이션 시작`);
+  setStatus(`시뮬레이션 진행 중 — ${currentCity.name}`);
+  map.flyTo([currentCity.lat, currentCity.lon], currentType === 'typhoon' ? 7 : 9, { duration: 1.2 });
+  const handlers = { flood:simFlood, fire:simFire, typhoon:simTyphoon, cold:simCold };
   handlers[currentType]();
 }
 
 function stopSimulation(keepRunning = false) {
-  if (!keepRunning) {
-    simRunning = false;
-    addLog('info', '시뮬레이션 초기화');
-    setStatus('시스템 대기 중');
-    renderRiskBars();
-  }
+  if (!keepRunning) { simRunning = false; setStatus('시스템 대기 중'); renderRiskBars(); addLog('info','시뮬레이션 초기화'); }
   clearInterval(simInterval);
-  simEntities.forEach(e => { try { viewer.entities.remove(e); } catch(e){} });
-  simEntities = [];
+  simLayers.forEach(l => { try { map.removeLayer(l); } catch(e){} });
+  simLayers = [];
 }
 
-function getTypeName() {
-  return { flood:'홍수 시뮬레이션', fire:'산불 시뮬레이션', typhoon:'태풍 시뮬레이션', cold:'한파 시뮬레이션' }[currentType];
-}
-
-// ── 홍수 시뮬레이션 ──
+// ── 홍수 ──
 function simFlood() {
   const { lat, lon } = currentCity;
   const rainfall = paramValues.rainfall ?? 80;
-  const maxRadius = (paramValues.spread ?? 10) * 1000;
-  const alpha = Math.min(0.7, 0.3 + rainfall / 300);
+  const maxR = (paramValues.spread ?? 10) * 1000;
+  const alpha = Math.min(0.65, 0.25 + rainfall / 280);
 
-  let step = 0;
-  const maxSteps = 20;
+  // 동심원 침수 레이어
+  [[0.18, alpha], [0.45, alpha * 0.65], [0.75, alpha * 0.38], [1.0, alpha * 0.2]].forEach(([r, a]) => {
+    const c = L.circle([lat, lon], {
+      radius: maxR * r,
+      color: '#00c8ff', weight: r < 0.5 ? 1.5 : 0.5,
+      fillColor: '#1a8fff', fillOpacity: a, opacity: 0.7,
+    }).addTo(map);
+    simLayers.push(c);
+  });
 
-  function addRing(radiusM, opacityMult) {
-    const e = viewer.entities.add({
-      position: Cesium.Cartesian3.fromDegrees(lon, lat),
-      ellipse: {
-        semiMinorAxis: radiusM * 0.8,
-        semiMajorAxis: radiusM,
-        material: new Cesium.ColorMaterialProperty(
-          Cesium.Color.fromCssColorString('#1a8fff').withAlpha(alpha * opacityMult)
-        ),
-        outline: radiusM < maxRadius * 0.4,
-        outlineColor: Cesium.Color.fromCssColorString('#00c8ff').withAlpha(0.8),
-        outlineWidth: 1,
-        height: 0,
-      }
-    });
-    simEntities.push(e);
-    return e;
-  }
-
-  // 중심 홍수
-  addRing(maxRadius * 0.2, 1.0);
-  addRing(maxRadius * 0.5, 0.6);
-  addRing(maxRadius * 0.8, 0.35);
-  addRing(maxRadius,       0.18);
-
-  // 강수 파티클 (점으로 표현)
-  for (let i = 0; i < 30; i++) {
+  // 강수 포인트
+  for (let i = 0; i < 25; i++) {
     const angle = Math.random() * Math.PI * 2;
-    const dist  = Math.random() * maxRadius;
-    const px = lon + (Math.cos(angle) * dist / 111000);
-    const py = lat + (Math.sin(angle) * dist / 111000);
-    const e = viewer.entities.add({
-      position: Cesium.Cartesian3.fromDegrees(px, py, 0),
-      point: {
-        pixelSize: 4 + Math.random() * 6,
-        color: Cesium.Color.fromCssColorString('#4db8ff').withAlpha(0.6),
-        outlineColor: Cesium.Color.CYAN.withAlpha(0.3),
-        outlineWidth: 1,
-      }
-    });
-    simEntities.push(e);
+    const dist  = Math.random() * maxR;
+    const pl = L.circleMarker([lat + Math.sin(angle) * dist / 111000, lon + Math.cos(angle) * dist / 111000], {
+      radius: 3 + Math.random() * 4, color: '#4db8ff', fillColor: '#4db8ff', fillOpacity: 0.7, weight: 0,
+    }).addTo(map);
+    simLayers.push(pl);
   }
 
-  // 확산 애니메이션
-  let wave = 0;
+  addLog('warn', `강수 ${rainfall}mm/h — 침수 반경 ${maxR/1000}km 예측`);
+  let step = 0;
   simInterval = setInterval(() => {
-    if (!simRunning) return;
-    wave++;
-    if (wave % 5 === 0) addLog('warn', `침수 확산 중 — ${(wave / maxSteps * 100).toFixed(0)}% 진행`);
-    if (wave >= maxSteps) { clearInterval(simInterval); addLog('alert', '홍수 시뮬레이션 최대 확산 도달!'); }
+    step++;
+    if (step % 5 === 0) addLog('warn', `침수 확산 ${(step*5)}% 진행`);
+    if (step >= 20) clearInterval(simInterval);
   }, 800);
-
-  addLog('warn', `강수량 ${rainfall}mm/h — 침수 반경 ${maxRadius/1000}km 예측`);
 }
 
-// ── 산불 시뮬레이션 ──
+// ── 산불 ──
 function simFire() {
   const { lat, lon } = currentCity;
-  const windspeed = paramValues.windspeed ?? 10;
-  const humidity  = paramValues.humidity  ?? 20;
-  const spread    = (paramValues.spread   ?? 5);
-
+  const wind = paramValues.windspeed ?? 10;
+  const hum  = paramValues.humidity  ?? 20;
+  const maxR = (paramValues.spread ?? 5) * 600;
   const windDir = Math.random() * Math.PI * 2;
-  const maxRadius = spread * 800;
+  const dx = Math.cos(windDir) / 111000, dy = Math.sin(windDir) / 111000;
 
   // 화재 중심
-  const center = viewer.entities.add({
-    position: Cesium.Cartesian3.fromDegrees(lon, lat),
-    ellipse: {
-      semiMinorAxis: 500,
-      semiMajorAxis: 500,
-      material: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#ff1a00').withAlpha(0.9)),
-      height: 0,
-    }
+  simLayers.push(L.circle([lat, lon], { radius: 600, color:'#ff1a00', fillColor:'#ff1a00', fillOpacity:0.9, weight:1 }).addTo(map));
+
+  // 바람 방향 확산 (타원형 근사 — 여러 원을 바람 방향으로 이동)
+  [0.25, 0.5, 0.75, 1.0].forEach((r, i) => {
+    const offLat = lat + dy * maxR * r * 0.5;
+    const offLon = lon + dx * maxR * r * 0.5;
+    simLayers.push(L.circle([offLat, offLon], {
+      radius: maxR * r * (0.55 + i * 0.1),
+      color: i < 2 ? '#ff5722' : '#ff9800', weight: 0.5,
+      fillColor: i < 2 ? '#ff5722' : '#ff9800',
+      fillOpacity: 0.42 - i * 0.08,
+    }).addTo(map));
   });
-  simEntities.push(center);
 
-  // 바람 방향으로 타원형 번짐
-  const dlon = Math.cos(windDir) * maxRadius / 111000;
-  const dlat = Math.sin(windDir) * maxRadius / 111000;
+  // 연기
+  simLayers.push(L.circle([lat + dy * maxR * 0.8 / 111000, lon + dx * maxR * 0.8 / 111000], {
+    radius: maxR * 1.8, color:'#888', weight:0, fillColor:'#888', fillOpacity:0.12,
+  }).addTo(map));
 
-  for (let ring = 1; ring <= 4; ring++) {
-    const r = maxRadius * ring * 0.25;
-    const e = viewer.entities.add({
-      position: Cesium.Cartesian3.fromDegrees(lon + dlon * ring * 0.12, lat + dlat * ring * 0.12),
-      ellipse: {
-        semiMinorAxis: r * 0.5,
-        semiMajorAxis: r,
-        rotation: windDir,
-        material: new Cesium.ColorMaterialProperty(
-          Cesium.Color.fromCssColorString(ring < 2 ? '#ff5722' : '#ff9800').withAlpha(0.5 - ring * 0.08)
-        ),
-        height: 0,
-      }
-    });
-    simEntities.push(e);
-  }
-
-  // 연기 영역
-  const smokeR = maxRadius * 2;
-  const se = viewer.entities.add({
-    position: Cesium.Cartesian3.fromDegrees(lon + dlon * 0.5, lat + dlat * 0.5),
-    ellipse: {
-      semiMinorAxis: smokeR * 0.4,
-      semiMajorAxis: smokeR,
-      rotation: windDir,
-      material: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#888888').withAlpha(0.18)),
-      height: 500,
-    }
-  });
-  simEntities.push(se);
-
-  addLog('warn', `풍속 ${windspeed}m/s / 습도 ${humidity}% — 산불 확산 위험 ${windspeed > 15 ? '매우 높음' : '높음'}`);
-
+  addLog('warn', `풍속 ${wind}m/s / 습도 ${hum}% — 산불 확산 ${wind > 15 ? '매우 빠름' : '빠름'}`);
   let step = 0;
   simInterval = setInterval(() => {
-    if (!simRunning) return;
     step++;
-    if (step % 4 === 0) addLog('warn', `화재 확산 — ${(step * 3).toFixed(0)}분 경과`);
+    if (step % 4 === 0) addLog('warn', `화재 ${step * 3}분 경과`);
   }, 1000);
 }
 
-// ── 태풍 시뮬레이션 ──
+// ── 태풍 ──
 function simTyphoon() {
   const { lat, lon } = currentCity;
   const maxwind = paramValues.maxwind ?? 40;
   const radius  = (paramValues.radius ?? 200) * 1000;
 
   // 태풍 눈
-  const eye = viewer.entities.add({
-    position: Cesium.Cartesian3.fromDegrees(lon, lat),
-    ellipse: {
-      semiMinorAxis: 15000,
-      semiMajorAxis: 15000,
-      material: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#9c27b0').withAlpha(0.95)),
-      height: 0,
-    }
-  });
-  simEntities.push(eye);
+  simLayers.push(L.circle([lat, lon], { radius:12000, color:'#9c27b0', fillColor:'#9c27b0', fillOpacity:0.92, weight:2 }).addTo(map));
 
-  // 강풍 반경 rings
-  const colors = ['#e91e63', '#9c27b0', '#673ab7', '#3f51b5'];
-  [0.25, 0.5, 0.75, 1.0].forEach((r, i) => {
-    const e = viewer.entities.add({
-      position: Cesium.Cartesian3.fromDegrees(lon, lat),
-      ellipse: {
-        semiMinorAxis: radius * r * 0.85,
-        semiMajorAxis: radius * r,
-        material: new Cesium.ColorMaterialProperty(
-          Cesium.Color.fromCssColorString(colors[i]).withAlpha(0.22 - i * 0.04)
-        ),
-        outline: true,
-        outlineColor: Cesium.Color.fromCssColorString(colors[i]).withAlpha(0.5),
-        outlineWidth: 1,
-        height: 0,
-      }
-    });
-    simEntities.push(e);
+  // 강풍 반경
+  [['#e91e63',0.22,1.0],['#9c27b0',0.14,0.75],['#673ab7',0.08,0.5]].forEach(([col,fo,r]) => {
+    simLayers.push(L.circle([lat, lon], {
+      radius: radius * r, color: col, weight: 1,
+      fillColor: col, fillOpacity: fo,
+    }).addTo(map));
   });
 
-  // 태풍 경로 (북북동 이동 가정)
-  const pathPoints = [];
-  for (let i = -3; i <= 3; i++) {
-    pathPoints.push(Cesium.Cartesian3.fromDegrees(lon + i * 0.5, lat + i * 0.8));
-  }
-  const path = viewer.entities.add({
-    polyline: {
-      positions: pathPoints,
-      width: 3,
-      material: new Cesium.PolylineDashMaterialProperty({
-        color: Cesium.Color.fromCssColorString('#e91e63').withAlpha(0.8),
-        dashLength: 16,
-      }),
-      clampToGround: true,
-    }
-  });
-  simEntities.push(path);
+  // 예상 경로 (북북동)
+  const path = [];
+  for (let i = -4; i <= 4; i++) path.push([lat + i * 0.9, lon + i * 0.45]);
+  simLayers.push(L.polyline(path, { color:'#e91e63', weight:2, dashArray:'8,8', opacity:0.8 }).addTo(map));
 
-  addLog('alert', `태풍 강도: 최대풍속 ${maxwind}m/s — ${maxwind >= 54 ? '초강력' : maxwind >= 33 ? '강' : '중'}`);
+  // 경로 포인트
+  path.forEach((p, i) => {
+    if (i % 2 === 0) simLayers.push(L.circleMarker(p, { radius:4, color:'#e91e63', fillColor:'#e91e63', fillOpacity:0.8, weight:0 }).addTo(map));
+  });
+
+  addLog('alert', `태풍 최대풍속 ${maxwind}m/s — ${maxwind>=54?'초강력':maxwind>=33?'강':'중'} 태풍`);
   addLog('warn', `강풍 반경 ${radius/1000}km — 광범위 피해 예상`);
-
   let step = 0;
   simInterval = setInterval(() => {
-    if (!simRunning) return;
     step++;
-    if (step % 6 === 0) addLog('warn', `태풍 접근 — ${(step * 10)}분 후 상륙 예상`);
+    if (step % 6 === 0) addLog('warn', `태풍 접근 — 상륙까지 약 ${Math.max(0, 60 - step * 10)}분`);
   }, 1000);
 }
 
-// ── 한파·폭설 시뮬레이션 ──
+// ── 한파 ──
 function simCold() {
   const { lat, lon } = currentCity;
-  const snow    = paramValues.snow ?? 30;
-  const mintemp = paramValues.mintemp ?? -15;
-  const radius  = 120000 + snow * 800;
+  const snow  = paramValues.snow ?? 30;
+  const temp  = paramValues.mintemp ?? -15;
+  const mainR = 120000 + snow * 700;
 
-  // 한파 영역
-  const e1 = viewer.entities.add({
-    position: Cesium.Cartesian3.fromDegrees(lon, lat),
-    ellipse: {
-      semiMinorAxis: radius * 0.6,
-      semiMajorAxis: radius,
-      material: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#82cfff').withAlpha(0.3)),
-      height: 0,
-    }
-  });
-  simEntities.push(e1);
+  simLayers.push(L.circle([lat, lon], { radius: mainR * 0.45, color:'#fff', weight:0.5, fillColor:'#fff', fillOpacity:0.4 }).addTo(map));
+  simLayers.push(L.circle([lat, lon], { radius: mainR * 0.75, color:'#82cfff', weight:0.5, fillColor:'#82cfff', fillOpacity:0.22 }).addTo(map));
+  simLayers.push(L.circle([lat, lon], { radius: mainR * 1.3,  color:'#82cfff', weight:1,   fillColor:'#b3e5fc', fillOpacity:0.1 }).addTo(map));
 
-  // 폭설 영역 (더 짙게)
-  const e2 = viewer.entities.add({
-    position: Cesium.Cartesian3.fromDegrees(lon, lat),
-    ellipse: {
-      semiMinorAxis: radius * 0.3,
-      semiMajorAxis: radius * 0.5,
-      material: new Cesium.ColorMaterialProperty(Cesium.Color.WHITE.withAlpha(0.45)),
-      height: 0,
-    }
-  });
-  simEntities.push(e2);
-
-  // 주변 영향 경계
-  const e3 = viewer.entities.add({
-    position: Cesium.Cartesian3.fromDegrees(lon, lat),
-    ellipse: {
-      semiMinorAxis: radius * 0.95,
-      semiMajorAxis: radius * 1.5,
-      material: new Cesium.ColorMaterialProperty(Cesium.Color.fromCssColorString('#b3e5fc').withAlpha(0.12)),
-      outline: true,
-      outlineColor: Cesium.Color.fromCssColorString('#82cfff').withAlpha(0.4),
-      outlineWidth: 1,
-      height: 0,
-    }
-  });
-  simEntities.push(e3);
-
-  addLog('alert', `최저 ${mintemp}°C 예보 — 한파 특보 발령`);
+  addLog('alert', `최저 ${temp}°C 예보 — 한파 특보 발령`);
   addLog('warn', `적설 ${snow}cm 예상 — 교통 마비 위험`);
-
   let step = 0;
   simInterval = setInterval(() => {
-    if (!simRunning) return;
     step++;
     if (step % 5 === 0) addLog('warn', `한파 ${step}시간 지속 — 동파 위험 증가`);
   }, 1500);
 }
 
-// ═══════════════════════════════════════
-//  UTILITIES
-// ═══════════════════════════════════════
+// ═══════════════════════════════
+//  UTILS
+// ═══════════════════════════════
 function addLog(type, msg) {
   const log = document.getElementById('sim-log');
-  const entry = document.createElement('div');
-  entry.className = `log-entry ${type}`;
-  const now = new Date();
-  const t = now.toTimeString().slice(0, 8);
-  entry.textContent = `[${t}] ${msg}`;
-  log.insertBefore(entry, log.firstChild);
+  const el = document.createElement('div');
+  el.className = `log-entry ${type}`;
+  el.textContent = `[${new Date().toTimeString().slice(0,8)}] ${msg}`;
+  log.insertBefore(el, log.firstChild);
   if (log.children.length > 30) log.removeChild(log.lastChild);
 }
 
-function setStatus(msg) {
-  const el = document.getElementById('sim-status');
-  el.textContent = msg;
-  el.classList.add('visible');
-}
+function setStatus(msg) { document.getElementById('sim-status').textContent = msg; }
 
 function startClock() {
-  setInterval(() => {
-    document.getElementById('clock').textContent = new Date().toLocaleTimeString('ko-KR');
-  }, 1000);
+  setInterval(() => { document.getElementById('clock').textContent = new Date().toLocaleTimeString('ko-KR'); }, 1000);
 }
 
-// ═══════════════════════════════════════
-//  START
-// ═══════════════════════════════════════
 window.addEventListener('load', init);
 </script>
 </body>
