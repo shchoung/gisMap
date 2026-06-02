@@ -1,0 +1,12 @@
+{
+  "name": "disaster-sim",
+  "version": "1.0.0",
+  "description": "기상재난 시뮬레이터",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
