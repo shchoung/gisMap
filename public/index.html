@@ -434,24 +434,25 @@ async function initCesium() {
       ? await Cesium.createWorldTerrainAsync({ requestWaterMask: true, requestVertexNormals: true })
       : new Cesium.EllipsoidTerrainProvider();
 
+    // ── Viewer 생성: imageryProvider 옵션 완전 제거 후 수동 추가 ──
     viewer = new Cesium.Viewer('cesiumContainer', {
       terrainProvider: terrain,
-      // Ion 위성 (토큰 있을 때만)
-      imageryProvider: hasTok
-        ? false   // IonWorldImagery를 아래서 추가
-        : new Cesium.UrlTemplateImageryProvider({
-            url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-            subdomains: ['a','b','c'], maximumLevel: 19,
-          }),
-      animation: false, baseLayerPicker: false, fullscreenButton: false,
+      imageryProvider: false,          // 내장 레이어 완전 비활성
+      baseLayerPicker: false,
+      animation: false, fullscreenButton: false,
       vrButton: false, geocoder: false, homeButton: false,
       infoBox: false, sceneModePicker: false, selectionIndicator: false,
       timeline: false, navigationHelpButton: false, projectionPicker: false,
       orderIndependentTranslucency: false,
     });
 
+    // 기본 레이어(index 0)가 자동 생성되어 있으면 제거
+    while (viewer.imageryLayers.length > 0) {
+      viewer.imageryLayers.remove(viewer.imageryLayers.get(0), true);
+    }
+
+    // ② 기본 배경 레이어 추가
     if (hasTok) {
-      // ② Ion 위성을 baseLayer로 등록
       baseLayer = viewer.imageryLayers.addImageryProvider(
         new Cesium.IonImageryProvider({ assetId: 3 })
       );
@@ -460,13 +461,13 @@ async function initCesium() {
         new Cesium.UrlTemplateImageryProvider({
           url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
           subdomains: ['a','b','c'], maximumLevel: 19,
+          credit: '© OpenStreetMap',
         })
       );
       document.getElementById('dem-notice').style.display = 'block';
-      // 레이어 메뉴 기본 선택 변경
       document.querySelector('.lyr-btn[data-base="ion_satellite"]').classList.remove('active');
       document.querySelector('.lyr-btn[data-base="osm"]').classList.add('active');
-      addLog('warn','Cesium 토큰 없음 — DEM 비활성, OSM 모드');
+      addLog('warn','Cesium 토큰 없음 — OSM 모드');
     }
 
     // ③ DEM 핵심 옵션
@@ -501,7 +502,7 @@ let overlayAlpha = 0.7;
 
 // 레이어 소스 정의
 const BASE_SOURCES = {
-  ion_satellite: () => new Cesium.IonImageryProvider({ assetId: 3 }),
+  ion_satellite: () => new Cesium.IonImageryProvider({ assetId: 3 }),  // sync constructor
   osm:           () => new Cesium.UrlTemplateImageryProvider({
     url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
     subdomains: ['a','b','c'], maximumLevel: 19,
@@ -554,15 +555,22 @@ async function setBase(el) {
   document.querySelectorAll('.lyr-btn[data-base]').forEach(b => b.classList.remove('active'));
   el.classList.add('active');
 
-  // 기존 기본 레이어 제거 (index 0)
   const layers = viewer.imageryLayers;
-  if (baseLayer) layers.remove(baseLayer, true);
 
-  const provider = await BASE_SOURCES[key]();
-  baseLayer = layers.addImageryProvider(provider);
-  baseLayer.alpha = parseFloat(document.querySelector('.lyr-alpha-slider').value);
+  // 기존 기본 레이어만 제거 (오버레이는 유지)
+  if (baseLayer) {
+    layers.remove(baseLayer, true);
+    baseLayer = null;
+  }
 
-  // 기본 레이어를 맨 아래로
+  // 새 기본 레이어 추가
+  const provider = BASE_SOURCES[key]();
+  // Ion provider는 async, 나머지는 sync
+  const resolvedProvider = (provider instanceof Promise) ? await provider : provider;
+  baseLayer = layers.addImageryProvider(resolvedProvider);
+  baseLayer.alpha = parseFloat(document.querySelectorAll('.lyr-alpha-slider')[0].value);
+
+  // 기본 레이어를 맨 아래(index 0)로 이동
   while (layers.indexOf(baseLayer) > 0) layers.lower(baseLayer);
 
   // 오버레이 알파 재적용
@@ -579,7 +587,8 @@ async function toggleOverlay(el, key) {
     el.querySelector('.lyr-icon').textContent = '➕';
     addLog('info', `오버레이 제거: ${key}`);
   } else {
-    const provider = await OVERLAY_SOURCES[key]();
+    const rawProvider = OVERLAY_SOURCES[key]();
+    const provider = (rawProvider instanceof Promise) ? await rawProvider : rawProvider;
     const layer = viewer.imageryLayers.addImageryProvider(provider);
     layer.alpha = overlayAlpha;
     overlayLayers[key] = layer;
