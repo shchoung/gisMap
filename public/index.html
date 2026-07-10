@@ -391,6 +391,8 @@ input[type=range]::-webkit-slider-thumb{
 </div>
 
 <!-- 타임라인 -->
+<div id="cam-lock-hint">🔒 카메라 고정 중 — ■ 초기화로 해제</div>
+
 <div id="tl">
   <div class="tl-top">
     <div id="tl-title">TIME PROGRESSION</div>
@@ -434,17 +436,10 @@ async function initCesium() {
       ? await Cesium.createWorldTerrainAsync({ requestWaterMask: true, requestVertexNormals: true })
       : new Cesium.EllipsoidTerrainProvider();
 
-    // ── Viewer 생성: OSM으로 안전하게 초기화 후 교체 ──
-    //    imageryProvider:false 는 Cesium 1.114에서 tilingScheme 오류 발생 → 사용 금지
-    const initProvider = new Cesium.UrlTemplateImageryProvider({
-      url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-      maximumLevel: 19,
-      credit: '© OpenStreetMap',
-    });
-
+    // ── Viewer 생성: imageryProvider 없이 생성 후 수동 추가 ──
+    // Cesium 1.114: new IonImageryProvider() 동기 생성 금지 → fromAssetId() 사용
     viewer = new Cesium.Viewer('cesiumContainer', {
       terrainProvider: terrain,
-      imageryProvider: initProvider,   // 반드시 유효한 provider로 초기화
       baseLayerPicker: false,
       animation: false, fullscreenButton: false,
       vrButton: false, geocoder: false, homeButton: false,
@@ -453,20 +448,19 @@ async function initCesium() {
       orderIndependentTranslucency: false,
     });
 
-    // Viewer가 자동 생성한 레이어(index 0) = initProvider 레이어
-    // 이걸 baseLayer로 등록해두고, 토큰 있으면 Ion으로 교체
-    baseLayer = viewer.imageryLayers.get(0);
+    // Viewer 기본 레이어 모두 제거
+    viewer.imageryLayers.removeAll(true);
 
-    // ② Ion 위성으로 교체 (토큰 있을 때)
+    // ② 배경 이미지리 추가 (비동기 안전 방식)
     if (hasTok) {
-      viewer.imageryLayers.remove(baseLayer, true);
-      baseLayer = viewer.imageryLayers.addImageryProvider(
-        new Cesium.IonImageryProvider({ assetId: 3 })
-      );
-      // Ion 레이어를 맨 아래로
-      while (viewer.imageryLayers.indexOf(baseLayer) > 0)
-        viewer.imageryLayers.lower(baseLayer);
+      const ionProvider = await Cesium.IonImageryProvider.fromAssetId(3);
+      baseLayer = viewer.imageryLayers.addImageryProvider(ionProvider);
     } else {
+      const osmProvider = new Cesium.UrlTemplateImageryProvider({
+        url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+        maximumLevel: 19, credit: '© OpenStreetMap',
+      });
+      baseLayer = viewer.imageryLayers.addImageryProvider(osmProvider);
       document.getElementById('dem-notice').style.display = 'block';
       document.querySelector('.lyr-btn[data-base="ion_satellite"]').classList.remove('active');
       document.querySelector('.lyr-btn[data-base="osm"]').classList.add('active');
@@ -542,7 +536,7 @@ let overlayAlpha = 0.7;
 
 // 레이어 소스 정의
 const BASE_SOURCES = {
-  ion_satellite: () => new Cesium.IonImageryProvider({ assetId: 3 }),  // sync constructor
+  ion_satellite: () => Cesium.IonImageryProvider.fromAssetId(3),  // async — Promise 반환
   osm:           () => new Cesium.UrlTemplateImageryProvider({
     url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
     subdomains: ['a','b','c'], maximumLevel: 19,
@@ -603,10 +597,9 @@ async function setBase(el) {
     baseLayer = null;
   }
 
-  // 새 기본 레이어 추가
-  const provider = BASE_SOURCES[key]();
-  // Ion provider는 async, 나머지는 sync
-  const resolvedProvider = (provider instanceof Promise) ? await provider : provider;
+  // 새 기본 레이어 추가 (Promise/sync 모두 처리)
+  const raw = BASE_SOURCES[key]();
+  const resolvedProvider = (raw && typeof raw.then === 'function') ? await raw : raw;
   baseLayer = layers.addImageryProvider(resolvedProvider);
   baseLayer.alpha = parseFloat(document.querySelectorAll('.lyr-alpha-slider')[0].value);
 
@@ -1146,6 +1139,10 @@ function runSim(){
   };
   vfxHandlers[curType]?.();
   addLog('info', 'VFX 파티클 시스템 활성화');
+
+  // 시뮬레이션 중 카메라 이동 잠금
+  lockCamera(true);
+  addLog('info', '카메라 고정 — 초기화 버튼으로 해제');
 }
 
 function renderStep(idx){
@@ -1154,13 +1151,28 @@ function renderStep(idx){
   if(t)addLog('info',`단계${idx} : ${t.label}`);
 }
 
+// 카메라 잠금/해제
+function lockCamera(lock) {
+  const ctrl = viewer.scene.screenSpaceCameraController;
+  ctrl.enableRotate    = !lock;
+  ctrl.enableZoom      = !lock;
+  ctrl.enableTilt      = !lock;
+  ctrl.enableLook      = !lock;
+  ctrl.enableTranslate = !lock;
+  const hint = document.getElementById('cam-lock-hint');
+  if (hint) hint.style.opacity = lock ? '1' : '0';
+}
+
 function stopSim(keep=false){
   pausePlay();
   allSteps.forEach(ents=>ents.forEach(e=>{try{viewer.entities.remove(e);}catch(err){}}));
   allSteps=[];curStep=0;
   // VFX 파티클 정리
   clearVFX();
-  if(!keep){renderRiskBars();buildTimeline(0);addLog('info','시뮬레이션 초기화');}
+  if(!keep){
+    lockCamera(false);
+    renderRiskBars();buildTimeline(0);addLog('info','시뮬레이션 초기화');
+  }
 }
 
 // ════════════════════════════════════════════
