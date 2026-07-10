@@ -42,7 +42,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);
 
 /* ── 레이어 전환 패널 ── */
 #layer-switcher{
-  position:absolute;top:56px;right:10px;z-index:301;
+  position:absolute;top:56px;right:10px;z-index:300;
   display:flex;flex-direction:column;gap:3px;
 }
 #layer-toggle-btn{
@@ -444,7 +444,7 @@ async function initCesium() {
 
     viewer = new Cesium.Viewer('cesiumContainer', {
       terrainProvider: terrain,
-      baseLayer: new Cesium.ImageryLayer(initProvider),
+      imageryProvider: initProvider,   // 반드시 유효한 provider로 초기화
       baseLayerPicker: false,
       animation: false, fullscreenButton: false,
       vrButton: false, geocoder: false, homeButton: false,
@@ -460,13 +460,10 @@ async function initCesium() {
     // ② Ion 위성으로 교체 (토큰 있을 때)
     if (hasTok) {
       viewer.imageryLayers.remove(baseLayer, true);
-
-      const ionProvider =
-        await Cesium.IonImageryProvider.fromAssetId(3);
-
-      baseLayer =
-        viewer.imageryLayers.addImageryProvider(ionProvider);
-
+      baseLayer = viewer.imageryLayers.addImageryProvider(
+        new Cesium.IonImageryProvider({ assetId: 3 })
+      );
+      // Ion 레이어를 맨 아래로
       while (viewer.imageryLayers.indexOf(baseLayer) > 0)
         viewer.imageryLayers.lower(baseLayer);
     } else {
@@ -476,13 +473,50 @@ async function initCesium() {
       addLog('warn','Cesium 토큰 없음 — OSM 모드');
     }
 
-    // ③ DEM 핵심 옵션
-    viewer.scene.globe.depthTestAgainstTerrain = false; // 엔티티가 지형에 묻히지 않게
-    viewer.scene.globe.enableLighting = true;
-    viewer.scene.globe.maximumScreenSpaceError = 1.5;   // 지형 해상도 높임 (낮을수록 고해상)
-    viewer.scene.fog.enabled = true;
-    viewer.scene.fog.density = 0.00015;
-    viewer.scene.screenSpaceCameraController.enableCollisionDetection = false;
+    // ③ DEM + 대기/해양/조명 VFX 설정
+    const scene  = viewer.scene;
+    const globe  = scene.globe;
+
+    // 지형
+    globe.depthTestAgainstTerrain   = false;
+    globe.enableLighting            = true;
+    globe.maximumScreenSpaceError   = 1.5;
+    globe.showGroundAtmosphere      = true;   // 지표 대기 산란
+
+    // 대기 (Atmosphere)
+    scene.skyAtmosphere.show              = true;
+    scene.skyAtmosphere.brightnessShift   = 0.1;
+    scene.skyAtmosphere.saturationShift   = 0.15;
+    scene.skyAtmosphere.hueShift          = 0.0;
+
+    // 해양 파동 (Water mask — requestWaterMask:true 와 쌍)
+    globe.showWaterEffect = true;
+
+    // Fog
+    scene.fog.enabled  = true;
+    scene.fog.density  = 0.00012;
+    scene.fog.minimumBrightness = 0.3;
+
+    // 태양 조명 (현재 시각 기준 실제 태양 위치)
+    viewer.clock.currentTime = Cesium.JulianDate.now();
+    scene.sun.show           = true;
+    scene.moon.show          = true;
+    scene.skyBox.show        = true;
+
+    // Post-processing: FXAA(안티앨리어싱)
+    if (scene.postProcessStages && scene.postProcessStages.fxaa) {
+      scene.postProcessStages.fxaa.enabled = true;
+    }
+
+    // Bloom (post-processing)
+    if (scene.postProcessStages && scene.postProcessStages.bloom) {
+      scene.postProcessStages.bloom.enabled   = true;
+      scene.postProcessStages.bloom.glowOnly  = false;
+      scene.postProcessStages.bloom.contrast  = 128;
+      scene.postProcessStages.bloom.brightness = -0.3;
+    }
+
+    scene.screenSpaceCameraController.enableCollisionDetection = false;
 
     // ④ 초기 카메라 (한반도 상공 45도 俯瞰)
     viewer.camera.setView({
@@ -490,7 +524,7 @@ async function initCesium() {
       orientation: { heading: 0, pitch: Cesium.Math.toRadians(-48), roll: 0 },
     });
 
-    addLog('info', hasTok ? 'Cesium Ion DEM 로드 완료' : 'OSM 평면 모드');
+    addLog('info', hasTok ? 'Cesium Ion DEM + VFX 로드 완료' : 'OSM 평면 모드');
   } catch(err) {
     console.error(err);
     addLog('alert','Cesium 초기화 오류: ' + err.message);
@@ -508,7 +542,7 @@ let overlayAlpha = 0.7;
 
 // 레이어 소스 정의
 const BASE_SOURCES = {
-  ion_satellite: () => Cesium.IonImageryProvider.fromAssetId(3),  // sync constructor
+  ion_satellite: () => new Cesium.IonImageryProvider({ assetId: 3 }),  // sync constructor
   osm:           () => new Cesium.UrlTemplateImageryProvider({
     url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
     subdomains: ['a','b','c'], maximumLevel: 19,
@@ -847,14 +881,57 @@ function renderParams() {
   c.innerHTML = ''; paramVals = {};
   ps.forEach(p => {
     paramVals[p.id] = p.val;
-    const pct = ((p.val-p.min)/(p.max-p.min)*100).toFixed(0);
-    c.innerHTML += `<div class="param-row">
-      <div class="param-label"><span>${p.label}</span><span class="pval" id="pv_${p.id}">${p.val}${p.unit?' '+p.unit:''}</span></div>
-      <input type="range" min="${p.min}" max="${p.max}" step="${p.step}" value="${p.val}"
-        style="--pct:${pct}%" oninput="updParam('${p.id}','${p.unit}',this)"/>
-    </div>`;
+    if (p.compass) {
+      // 풍향 컴패스 UI
+      c.innerHTML += `<div class="param-row">
+        <div class="param-label">
+          <span>${p.label}</span>
+          <span class="pval" id="pv_${p.id}">${dirLabel(p.val)} (${p.val}°)</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div id="compass-wrap" style="flex-shrink:0;position:relative;width:52px;height:52px">
+            <svg viewBox="0 0 52 52" width="52" height="52">
+              <circle cx="26" cy="26" r="24" fill="rgba(0,200,255,.06)" stroke="rgba(0,200,255,.25)" stroke-width="1"/>
+              <text x="26" y="8"  text-anchor="middle" font-size="7" fill="#3a6a8a" font-family="Share Tech Mono">N</text>
+              <text x="26" y="49" text-anchor="middle" font-size="7" fill="#3a6a8a" font-family="Share Tech Mono">S</text>
+              <text x="4"  y="29" text-anchor="middle" font-size="7" fill="#3a6a8a" font-family="Share Tech Mono">W</text>
+              <text x="48" y="29" text-anchor="middle" font-size="7" fill="#3a6a8a" font-family="Share Tech Mono">E</text>
+              <line id="compass-arrow" x1="26" y1="26" x2="26" y2="8"
+                stroke="#ff5722" stroke-width="2.5" stroke-linecap="round"
+                transform="rotate(${p.val},26,26)"/>
+              <circle cx="26" cy="26" r="3" fill="#ff5722"/>
+            </svg>
+          </div>
+          <input type="range" min="0" max="359" step="1" value="${p.val}"
+            style="--pct:${(p.val/359*100).toFixed(0)}%;flex:1"
+            oninput="updWindDir(this)"/>
+        </div>
+      </div>`;
+    } else {
+      const pct = ((p.val-p.min)/(p.max-p.min)*100).toFixed(0);
+      c.innerHTML += `<div class="param-row">
+        <div class="param-label"><span>${p.label}</span><span class="pval" id="pv_${p.id}">${p.val}${p.unit?' '+p.unit:''}</span></div>
+        <input type="range" min="${p.min}" max="${p.max}" step="${p.step}" value="${p.val}"
+          style="--pct:${pct}%" oninput="updParam('${p.id}','${p.unit}',this)"/>
+      </div>`;
+    }
   });
   syncMob();
+}
+
+const DIR_LABELS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+function dirLabel(deg) { return DIR_LABELS[Math.round(deg/22.5) % 16]; }
+
+function updWindDir(el) {
+  const v = parseInt(el.value);
+  paramVals['winddir'] = v;
+  el.style.setProperty('--pct', (v/359*100).toFixed(0)+'%');
+  // 라벨 업데이트
+  const pv = document.getElementById('pv_winddir');
+  if (pv) pv.textContent = dirLabel(v) + ' (' + v + '°)';
+  // 컴패스 화살표 회전
+  const arrow = document.getElementById('compass-arrow');
+  if (arrow) arrow.setAttribute('transform', `rotate(${v},26,26)`);
 }
 function updParam(id,unit,el){
   const v=parseFloat(el.value); paramVals[id]=v;
@@ -1058,6 +1135,17 @@ function runSim(){
 
   renderStep(0);
   addLog('info',`기준반경 ${(baseR/1000).toFixed(1)}km / 고도 ${(camH/1000).toFixed(0)}km`);
+
+  // VFX 파티클 시작
+  clearVFX();
+  const vfxHandlers = {
+    flood:   () => startFloodVFX(c, baseR),
+    fire:    () => startFireVFX(c, baseR, paramVals.winddir ?? 45),
+    typhoon: () => startTyphoonVFX(c, baseR),
+    cold:    () => startColdVFX(c, baseR),
+  };
+  vfxHandlers[curType]?.();
+  addLog('info', 'VFX 파티클 시스템 활성화');
 }
 
 function renderStep(idx){
@@ -1070,7 +1158,243 @@ function stopSim(keep=false){
   pausePlay();
   allSteps.forEach(ents=>ents.forEach(e=>{try{viewer.entities.remove(e);}catch(err){}}));
   allSteps=[];curStep=0;
+  // VFX 파티클 정리
+  clearVFX();
   if(!keep){renderRiskBars();buildTimeline(0);addLog('info','시뮬레이션 초기화');}
+}
+
+// ════════════════════════════════════════════
+//  VFX PARTICLE SYSTEM
+// ════════════════════════════════════════════
+let vfxPrimitives = [];
+let vfxInterval   = null;
+
+function clearVFX() {
+  clearInterval(vfxInterval);
+  vfxPrimitives.forEach(p => {
+    try { viewer.scene.primitives.remove(p); } catch(e) {}
+  });
+  vfxPrimitives = [];
+  // post-processing 리셋
+  resetPostProcess();
+}
+
+function resetPostProcess() {
+  const pp = viewer.scene.postProcessStages;
+  if (!pp) return;
+  if (pp.bloom) {
+    pp.bloom.enabled    = true;
+    pp.bloom.contrast   = 128;
+    pp.bloom.brightness = -0.3;
+  }
+}
+
+// ── 공통 파티클 생성 헬퍼 ──
+function makeParticleSystem(pos, opts) {
+  try {
+    const ps = new Cesium.ParticleSystem({
+      image: makeParticleCanvas(opts.color ?? '#ffffff', opts.shape ?? 'circle'),
+      startColor:  Cesium.Color.fromCssColorString(opts.startColor ?? opts.color ?? '#fff').withAlpha(opts.startAlpha ?? 0.8),
+      endColor:    Cesium.Color.fromCssColorString(opts.endColor   ?? opts.color ?? '#fff').withAlpha(0.0),
+      startScale:  opts.startScale  ?? 1.0,
+      endScale:    opts.endScale    ?? 3.0,
+      minimumParticleLife: opts.minLife ?? 2.0,
+      maximumParticleLife: opts.maxLife ?? 4.0,
+      minimumSpeed: opts.minSpd ?? 2.0,
+      maximumSpeed: opts.maxSpd ?? 8.0,
+      emissionRate: opts.rate ?? 20,
+      lifetime:     opts.lifetime ?? Infinity,
+      emitter: opts.emitter ?? new Cesium.SphereEmitter(opts.emitterR ?? 100),
+      modelMatrix: Cesium.Transforms.eastNorthUpToFixedFrame(pos),
+      emitterModelMatrix: new Cesium.Matrix4(),
+      updateCallback: opts.updateCb ?? undefined,
+    });
+    viewer.scene.primitives.add(ps);
+    vfxPrimitives.push(ps);
+    return ps;
+  } catch(e) { console.warn('ParticleSystem 오류:', e); return null; }
+}
+
+// Canvas로 파티클 텍스처 생성
+function makeParticleCanvas(color, shape) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 32;
+  const ctx = c.getContext('2d');
+  const grd = ctx.createRadialGradient(16,16,0,16,16,16);
+  grd.addColorStop(0, color);
+  grd.addColorStop(1, 'transparent');
+  ctx.fillStyle = grd;
+  if (shape === 'square') {
+    ctx.fillRect(0,0,32,32);
+  } else {
+    ctx.beginPath(); ctx.arc(16,16,16,0,Math.PI*2); ctx.fill();
+  }
+  return c;
+}
+
+// ── 홍수 VFX: 빗방울 + 수면 파문 ──
+function startFloodVFX(center, baseR) {
+  const pos = Cesium.Cartesian3.fromDegrees(center.lon, center.lat, 200);
+
+  // 비 파티클
+  makeParticleSystem(pos, {
+    color: '#aaddff', startColor: '#aaddff', endColor: '#6699cc',
+    startAlpha: 0.7, startScale: 0.4, endScale: 0.2,
+    minLife: 0.8, maxLife: 1.5, minSpd: 30, maxSpd: 60,
+    rate: 180, emitterR: baseR * 0.6,
+    emitter: new Cesium.BoxEmitter(new Cesium.Cartesian3(baseR*.8, baseR*.8, 10)),
+    updateCb: (p, dt) => {
+      // 빗방울은 아래로 떨어짐
+      p.velocity = new Cesium.Cartesian3(
+        p.velocity.x * 0.98,
+        p.velocity.y * 0.98,
+        -50,
+      );
+    }
+  });
+
+  // 물보라 (낮은 고도)
+  const pos2 = Cesium.Cartesian3.fromDegrees(center.lon, center.lat, 5);
+  makeParticleSystem(pos2, {
+    color: '#88ccff', startColor: '#aaddff', endColor: '#ffffff',
+    startAlpha: 0.5, startScale: 1.5, endScale: 4.0,
+    minLife: 1.0, maxLife: 2.5, minSpd: 1, maxSpd: 4,
+    rate: 60, emitterR: baseR * 0.4,
+  });
+
+  // post: 파란 색조 강화
+  applyPostTint('flood');
+}
+
+// ── 산불 VFX: 불꽃 + 연기 파티클 ──
+function startFireVFX(center, baseR, windDeg) {
+  const pos = Cesium.Cartesian3.fromDegrees(center.lon, center.lat, 30);
+  const wRad = Cesium.Math.toRadians(90 - ((windDeg + 180) % 360));
+  const wdx = Math.cos(wRad) * 8, wdy = Math.sin(wRad) * 8;
+
+  // 불꽃 코어
+  makeParticleSystem(pos, {
+    color: '#ff4400', startColor: '#ffaa00', endColor: '#ff2200',
+    startAlpha: 0.9, startScale: 0.8, endScale: 2.5,
+    minLife: 0.6, maxLife: 1.4, minSpd: 5, maxSpd: 18,
+    rate: 120,
+    emitter: new Cesium.ConeEmitter(Cesium.Math.toRadians(25)),
+    updateCb: (p, dt) => {
+      p.velocity.z += 3 * dt;  // 위로 상승
+      p.velocity.x += wdx * dt;
+      p.velocity.y += wdy * dt;
+    }
+  });
+
+  // 연기
+  const smokePos = Cesium.Cartesian3.fromDegrees(center.lon, center.lat, 150);
+  makeParticleSystem(smokePos, {
+    color: '#444444', startColor: '#666', endColor: '#222',
+    startAlpha: 0.4, startScale: 2.0, endScale: 8.0,
+    minLife: 3.0, maxLife: 7.0, minSpd: 2, maxSpd: 6,
+    rate: 40,
+    emitter: new Cesium.SphereEmitter(baseR * 0.15),
+    updateCb: (p, dt) => {
+      p.velocity.z += 1.5 * dt;
+      p.velocity.x += wdx * 0.5 * dt;
+      p.velocity.y += wdy * 0.5 * dt;
+    }
+  });
+
+  // 불씨 (sparks)
+  makeParticleSystem(pos, {
+    color: '#ffdd00', startColor: '#ffff88', endColor: '#ff6600',
+    startAlpha: 1.0, startScale: 0.3, endScale: 0.1,
+    minLife: 1.5, maxLife: 3.5, minSpd: 10, maxSpd: 35,
+    rate: 30, emitterR: 50,
+    updateCb: (p, dt) => {
+      p.velocity.z += 2 * dt;
+      p.velocity.x += (wdx + (Math.random()-.5)*5) * dt;
+      p.velocity.y += (wdy + (Math.random()-.5)*5) * dt;
+    }
+  });
+
+  // post: 붉은 Bloom
+  applyPostTint('fire');
+}
+
+// ── 태풍 VFX: 회오리 파티클 + 비 ──
+function startTyphoonVFX(center, baseR) {
+  const pos = Cesium.Cartesian3.fromDegrees(center.lon, center.lat, 500);
+  let angle = 0;
+
+  // 회오리 (나선형 운동)
+  makeParticleSystem(pos, {
+    color: '#aabbff', startColor: '#ccddff', endColor: '#8899cc',
+    startAlpha: 0.6, startScale: 1.0, endScale: 4.0,
+    minLife: 2.0, maxLife: 5.0, minSpd: 15, maxSpd: 40,
+    rate: 80, emitterR: baseR * 0.2,
+    updateCb: (p, dt) => {
+      angle += dt * 1.5;
+      const r = Math.sqrt(p.velocity.x**2 + p.velocity.y**2);
+      p.velocity.x =  Math.cos(angle) * r;
+      p.velocity.y =  Math.sin(angle) * r;
+      p.velocity.z -= 1 * dt;
+    }
+  });
+
+  // 강우
+  const rainPos = Cesium.Cartesian3.fromDegrees(center.lon, center.lat, 300);
+  makeParticleSystem(rainPos, {
+    color: '#88aacc', startColor: '#aaccee', endColor: '#6688aa',
+    startAlpha: 0.5, startScale: 0.3, endScale: 0.15,
+    minLife: 1.0, maxLife: 2.0, minSpd: 40, maxSpd: 80,
+    rate: 200, emitterR: baseR * 0.5,
+    updateCb: (p, dt) => { p.velocity.z -= 60 * dt; }
+  });
+
+  applyPostTint('typhoon');
+}
+
+// ── 한파 VFX: 눈송이 파티클 ──
+function startColdVFX(center, baseR) {
+  const pos = Cesium.Cartesian3.fromDegrees(center.lon, center.lat, 400);
+
+  // 눈
+  makeParticleSystem(pos, {
+    color: '#eef6ff', startColor: '#ffffff', endColor: '#aaddff',
+    startAlpha: 0.8, startScale: 0.5, endScale: 1.5,
+    minLife: 3.0, maxLife: 7.0, minSpd: 1, maxSpd: 5,
+    rate: 120, shape: 'circle',
+    emitter: new Cesium.BoxEmitter(new Cesium.Cartesian3(baseR*.9, baseR*.9, 20)),
+    updateCb: (p, dt) => {
+      p.velocity.z  -= 3 * dt;
+      p.velocity.x  += (Math.random()-.5) * 2 * dt;
+      p.velocity.y  += (Math.random()-.5) * 2 * dt;
+    }
+  });
+
+  // 결빙 서리 효과 (낮은 고도 작은 반짝임)
+  const frostPos = Cesium.Cartesian3.fromDegrees(center.lon, center.lat, 10);
+  makeParticleSystem(frostPos, {
+    color: '#cceeff', startColor: '#ffffff', endColor: '#88ccff',
+    startAlpha: 0.6, startScale: 0.2, endScale: 0.8,
+    minLife: 1.0, maxLife: 3.0, minSpd: 0.5, maxSpd: 2,
+    rate: 30, emitterR: baseR * 0.3,
+  });
+
+  applyPostTint('cold');
+}
+
+// ── Post-process 색조 ──
+function applyPostTint(type) {
+  const pp = viewer.scene.postProcessStages;
+  if (!pp || !pp.bloom) return;
+  const tints = {
+    flood:   { contrast: 120, brightness: -0.2 },
+    fire:    { contrast: 160, brightness: -0.1 },
+    typhoon: { contrast: 130, brightness: -0.3 },
+    cold:    { contrast: 100, brightness:  0.1 },
+  };
+  const t = tints[type] ?? { contrast: 128, brightness: -0.3 };
+  pp.bloom.enabled    = true;
+  pp.bloom.contrast   = t.contrast;
+  pp.bloom.brightness = t.brightness;
 }
 
 // ── 색 헬퍼 ──
@@ -1116,44 +1440,94 @@ function buildFlood(c,baseR,step,maxS){
 function buildFire(c,baseR,step,maxS){
   const ents=[];
   const t=step/Math.max(1,maxS);
-  const ws=paramVals.windspeed??10;
-  const wAng=Math.PI/4; // 북동풍 고정
-  const dx=Math.cos(wAng),dy=Math.sin(wAng);
-  const sf=1+t*(ws/7);
+  const ws  = paramVals.windspeed ?? 10;
+  const hum = paramVals.humidity  ?? 20;
 
-  const exp=pts.map(p=>({
-    lon:c.lon+(p.lon-c.lon)*sf*(1+dx*.35*t),
-    lat:c.lat+(p.lat-c.lat)*sf*(1+dy*.35*t),
-  }));
-  const fc=t<.4?'#ff5722':t<.75?'#ff2200':'#cc0000';
+  // 풍향: 기상학 기준(바람이 불어오는 방향) → 진행 방향으로 변환
+  // 슬라이더 0°=N, 90°=E ... 바람이 이 방향에서 불어옴 → 화재는 반대로 진행
+  const windFromDeg = paramVals.winddir ?? 45;
+  const windToDeg   = (windFromDeg + 180) % 360; // 화재 진행 방향
+  // Cesium 좌표계: 동=+lon, 북=+lat
+  // 지리 각도: 0°=N, 90°=E → 수학 각도: 90°-deg
+  const wRad = Cesium.Math.toRadians(90 - windToDeg);
+  const dx = Math.cos(wRad);  // lon 방향 성분
+  const dy = Math.sin(wRad);  // lat 방향 성분
 
+  // 습도·풍속에 따른 확산 계수
+  const dryBonus = Math.max(0, (40 - hum) / 40);   // 건조할수록 빠름
+  const sf = 1 + t * (ws / 7 + dryBonus * 0.8);
+
+  // 바람 방향 편향 계수 (풍속 강할수록 비대칭 심해짐)
+  const bias = Math.min(0.7, ws / 30) * t;
+
+  // 폴리곤 확장: 바람 방향으로 비대칭 팽창
+  const exp = pts.map(p => {
+    const relLon = p.lon - c.lon;
+    const relLat = p.lat - c.lat;
+    // 풍향 성분만큼 치우침
+    const bLon = relLon * sf + dx * bias * baseR / 111000;
+    const bLat = relLat * sf + dy * bias * baseR / 111000;
+    return { lon: c.lon + bLon, lat: c.lat + bLat };
+  });
+
+  const fc = t < .4 ? '#ff5722' : t < .75 ? '#ff2200' : '#cc0000';
+
+  // 화재 폴리곤
   ents.push(viewer.entities.add({polygon:{
-    hierarchy:new Cesium.PolygonHierarchy(exp.map(p=>Cesium.Cartesian3.fromDegrees(p.lon,p.lat))),
-    material:ac(fc,Math.min(.78,.22+t*.6)),
-    classificationType:Cesium.ClassificationType.TERRAIN,
+    hierarchy: new Cesium.PolygonHierarchy(exp.map(p=>Cesium.Cartesian3.fromDegrees(p.lon,p.lat))),
+    material: ac(fc, Math.min(.78, .22+t*.6)),
+    classificationType: Cesium.ClassificationType.TERRAIN,
   }}));
 
-  // 연기 (고도 있음 → DEM과 대비)
-  const slon=c.lon+dx*baseR*t*1.2/111000;
-  const slat=c.lat+dy*baseR*t*1.2/111000;
-  ents.push(viewer.entities.add({position:Cesium.Cartesian3.fromDegrees(slon,slat,200+t*600),
+  // 연기 기둥 (바람 방향으로 흘러감, 고도 있어 DEM과 대비)
+  const smokeOffset = 1.0 + t * 1.4;
+  const slon = c.lon + dx * baseR * t * smokeOffset / 111000;
+  const slat = c.lat + dy * baseR * t * smokeOffset / 111000;
+  // Cesium rotation은 동쪽 기준 반시계 rad → windToDeg 변환
+  const cesiumRot = Cesium.Math.toRadians(90 - windToDeg);
+  ents.push(viewer.entities.add({position: Cesium.Cartesian3.fromDegrees(slon, slat, 300+t*700),
     ellipse:{
-      semiMinorAxis:baseR*(.5+t*.8),semiMajorAxis:baseR*(.85+t*1.3),rotation:wAng,height:300+t*500,
-      material:ac('#666',Math.min(.22,t*.28)),
+      semiMinorAxis: baseR*(.45+t*.75),
+      semiMajorAxis: baseR*(.8+t*1.5),
+      rotation: cesiumRot,
+      height: 300+t*500,
+      material: ac('#555', Math.min(.24, t*.3)),
     }
   }));
 
-  // 화선 윤곽
+  // 화선 윤곽선
   ents.push(viewer.entities.add({polyline:{
-    positions:exp.map(p=>Cesium.Cartesian3.fromDegrees(p.lon,p.lat)),
-    width:2+t*2.5,clampToGround:true,
-    material:new Cesium.ColorMaterialProperty(ac('#ff6600',.9)),
+    positions: [...exp, exp[0]].map(p=>Cesium.Cartesian3.fromDegrees(p.lon,p.lat)),
+    width: 2+t*2.5, clampToGround: true,
+    material: new Cesium.ColorMaterialProperty(ac('#ff6600',.9)),
   }}));
 
-  if(step>0){
-    const ba=(calcArea()*sf*sf).toFixed(1);
-    ents.push(mkLabel(c,`소실 ${ba}km²`,'#ff9a6c'));
+  // 풍향 화살표 (진행 방향)
+  if (step > 0) {
+    const arrowLen = baseR * 0.6;
+    const aLon = c.lon + dx * arrowLen / 111000;
+    const aLat = c.lat + dy * arrowLen / 111000;
+    ents.push(viewer.entities.add({polyline:{
+      positions: [
+        Cesium.Cartesian3.fromDegrees(c.lon, c.lat, 50),
+        Cesium.Cartesian3.fromDegrees(aLon, aLat, 50),
+      ],
+      width: 2.5,
+      material: new Cesium.PolylineArrowMaterialProperty(ac('#ffcc00', .9)),
+      clampToGround: false,
+    }}));
   }
+
+  // 정보 라벨
+  const ba   = (calcArea() * sf * sf).toFixed(1);
+  const dLbl = dirLabel(windFromDeg);
+  ents.push(mkLabel(c,
+    step === 0
+      ? `풍향 ${dLbl}(${windFromDeg}°)  풍속 ${ws}m/s`
+      : `소실 ${ba}km²  ${dLbl}풍 ${ws}m/s`,
+    '#ff9a6c'
+  ));
+
   return ents;
 }
 
