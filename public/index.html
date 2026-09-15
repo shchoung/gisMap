@@ -609,7 +609,7 @@
     function buildOlBaseSource(providerKey) {
         if (providerKey === 'vworld') {
             return new ol.source.XYZ({
-                url: 'https://api.vworld.kr/req/wmts/1.0.0/' + VWORLD_API_KEY + '/Base/{z}/{y}/{x}.png',
+                url: '/api/vworld/req/wmts/1.0.0/' + VWORLD_API_KEY + '/Base/{z}/{y}/{x}.png',
                 maxZoom: 19,
                 attributions: '&copy; VWorld'
             });
@@ -849,7 +849,7 @@
 
     function reverseGeocodeVWorld(lat, lng, callback) {
         $.ajax({
-            url: 'https://api.vworld.kr/req/address',
+            url: '/api/vworld/req/address',
             dataType: 'jsonp',
             jsonp: 'callback',
             data: {
@@ -871,7 +871,7 @@
     /* 토지 및 건물 상세 정보 조회 (VWorld Data API) */
     function fetchVWorldParcelAndBuildingDetails(lat, lng, jibunAddress) {
         const delta = 0.00015;
-        const dataApiUrl = 'https://api.vworld.kr/req/data?service=data&request=GetFeature&data=LP_PA_CBND_BUBUN&key=' 
+        const dataApiUrl = '/api/vworld/req/data?service=data&request=GetFeature&data=LP_PA_CBND_BUBUN&key=' 
             + VWORLD_API_KEY + '&domain=' + encodeURIComponent(CURRENT_DOMAIN) 
             + '&geomFilter=BOX(' + (lng-delta) + ',' + (lat-delta) + ',' + (lng+delta) + ',' + (lat+delta) + ')&crs=EPSG:4326&format=json';
 
@@ -996,7 +996,7 @@
 
     function searchVWorldAddress(keyword) {
         $.ajax({
-            url: 'https://api.vworld.kr/req/search',
+            url: '/api/vworld/req/search',
             dataType: 'jsonp',
             jsonp: 'callback',
             data: { service: 'search', request: 'search', version: '2.0', crs: 'EPSG:4326', size: 10, page: 1, query: keyword, type: 'address', category: 'parcel', format: 'json', key: VWORLD_API_KEY, domain: CURRENT_DOMAIN },
