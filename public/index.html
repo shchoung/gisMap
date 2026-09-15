@@ -555,76 +555,55 @@
 
     /* VWorld WMS 레이어 정의 */
     const GEO_LAYERS = {
-       'LP_PA_CBND_BUBUN': {
-        title: '연속지적도',
-        name: 'lp_pa_cbnd_bubun',
-        wmsLayers: 'lp_pa_cbnd_bonbun,lp_pa_cbnd_bubun',
-        wmsStyles: 'lp_pa_cbnd_bonbun_line,lp_pa_cbnd_bubun_line',
-        visible: false,
-        olLayer: null,
-        kakaoOverlay: null,
-        naverOverlay: null
-    },
-
-    'LT_C_SPBD': {
-        title: '건물공간정보',
-        name: 'lt_c_spbd',
-        wmsLayers: 'lt_c_spbd',
-        wmsStyles: 'lt_c_spbd',
-        visible: false,
-        olLayer: null,
-        kakaoOverlay: null,
-        naverOverlay: null
-    },
-
-    'LT_C_AISPRT': {
-        title: '용도지역지구도',
-        name: 'lt_c_aisprt',
-        wmsLayers: 'lt_c_aisprt',
-        wmsStyles: 'lt_c_aisprt',
-        visible: false,
-        olLayer: null,
-        kakaoOverlay: null,
-        naverOverlay: null
-    }
+        'LP_PA_CBND_BUBUN': {
+            title: '연속지적도',
+            name: 'LP_PA_CBND_BUBUN',
+            wmsLayers: 'lp_pa_cbnd_bonbun,lp_pa_cbnd_bubun',
+            wmsStyles: 'lp_pa_cbnd_bonbun_line,lp_pa_cbnd_bubun_line',
+            visible: true,
+            olLayer: null,
+            kakaoOverlay: null,
+            naverOverlay: null
+        },
+        'LT_C_SPBD': { title: '건물공간정보', name: 'LT_C_SPBD', visible: false, olLayer: null, kakaoOverlay: null, naverOverlay: null },
+        'LT_C_AISPRT': { title: '용도지역지구도', name: 'LT_C_AISPRT', visible: false, olLayer: null, kakaoOverlay: null, naverOverlay: null }
     };
 
     /* OpenLayers WMS 레이어 생성 (VWorld 전용) */
-    function createOlVWorldWmsLayer(layerName) {
+    function createOlVWorldWmsLayer(layerKey) {
+        const layerInfo = GEO_LAYERS[layerKey];
 
-    const layerInfo = GEO_LAYERS[layerName];
+        if (!layerInfo) {
+            console.error('정의되지 않은 레이어:', layerKey);
+            return null;
+        }
 
-    if (!layerInfo) {
-        console.error('정의되지 않은 레이어:', layerName);
-        return null;
+        if (!layerInfo.wmsLayers) {
+            console.error('WMS 레이어 설정이 없습니다:', layerKey);
+            return null;
+        }
+
+        return new ol.layer.Tile({
+            source: new ol.source.TileWMS({
+                url: 'https://api.vworld.kr/req/wms',
+                params: {
+                    SERVICE: 'WMS',
+                    REQUEST: 'GetMap',
+                    VERSION: '1.3.0',
+                    LAYERS: layerInfo.wmsLayers,
+                    STYLES: layerInfo.wmsStyles || '',
+                    CRS: 'EPSG:3857',
+                    FORMAT: 'image/png',
+                    TRANSPARENT: true,
+                    KEY: VWORLD_API_KEY,
+                    DOMAIN: CURRENT_DOMAIN
+                },
+                crossOrigin: 'anonymous'
+            }),
+            zIndex: 12,
+            visible: layerInfo.visible === true
+        });
     }
-
-    return new ol.layer.Tile({
-        source: new ol.source.TileWMS({
-            url: 'https://api.vworld.kr/req/wms',
-
-            params: {
-                'SERVICE': 'WMS',
-                'REQUEST': 'GetMap',
-                'VERSION': '1.3.0',
-
-                'LAYERS': layerInfo.wmsLayers,
-                'STYLES': layerInfo.wmsStyles,
-
-                'CRS': 'EPSG:3857',
-                'FORMAT': 'image/png',
-                'TRANSPARENT': true,
-
-                'KEY': VWORLD_API_KEY,
-                'DOMAIN': CURRENT_DOMAIN
-            },
-
-            crossOrigin: 'anonymous'
-        }),
-
-        zIndex: 12
-    });
-}
 
     /* OpenLayers 지도 초기화 */
     function buildOlBaseSource(providerKey) {
@@ -773,17 +752,26 @@
 
         if (currentBaseMap === 'vworld' || currentBaseMap === 'osm') {
             if (!layerInfo.olLayer) {
-                layerInfo.olLayer = createOlVWorldWmsLayer(layerInfo.name);
+                layerInfo.olLayer = createOlVWorldWmsLayer(layerName);
             }
+
+            if (!layerInfo.olLayer) {
+                console.error('레이어 생성에 실패했습니다:', layerName);
+                return;
+            }
+
             if (!olMap.getLayers().getArray().includes(layerInfo.olLayer)) {
                 olMap.addLayer(layerInfo.olLayer);
             }
+
+            layerInfo.olLayer.setVisible(layerInfo.visible === true);
         }
     }
 
     function removeLayerFromEngine(layerName) {
         const layerInfo = GEO_LAYERS[layerName];
         if (layerInfo && layerInfo.olLayer) {
+            layerInfo.olLayer.setVisible(false);
             olMap.removeLayer(layerInfo.olLayer);
         }
     }
@@ -807,6 +795,7 @@
     }
 
     document.querySelectorAll('.layer-checkbox').forEach(chk => {
+        if (!chk) return;
         chk.addEventListener('change', function() {
             toggleGeoServerLayer(this.dataset.layer, this.checked);
         });
@@ -1125,8 +1114,15 @@
         olMap.getView().setZoom(sharedZoom);
     }
 
-    // 초기 레이어 상태 갱신 및 검색 실행
+    // 초기 레이어 상태 갱신 및 초기 표시 레이어 적용
     updateLayerStatus();
+    Object.keys(GEO_LAYERS).forEach(layerKey => {
+        if (GEO_LAYERS[layerKey].visible) {
+            applyLayerToCurrentEngine(layerKey);
+        }
+    });
+
+    // 초기 검색 실행
     searchPlaces();
 </script>
 
