@@ -1,15 +1,15 @@
 {
-  "name": "disaster-sim",
+  "name": "gis-vworld-proxy",
   "version": "1.0.0",
-  "description": "기상재난 시뮬레이터",
+  "description": "GIS application with VWorld WMS proxy",
   "main": "server.js",
-  "engines": {
-    "node": ">=18"
-  },
   "scripts": {
     "start": "node server.js"
   },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
-    "express": "^4.18.2"
+    "express": "^4.21.2"
   }
 }
