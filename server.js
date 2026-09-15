@@ -60,9 +60,28 @@ app.get('/api/vworld/wms', async (req, res) => {
     const vworldUrl =
       `https://api.vworld.kr/req/wms?${query.toString()}`;
 
-    console.log('[VWorld WMS 요청]', vworldUrl);
+    console.log('[WMS 요청 시작]');
+    console.log(vworldUrl);
 
-    const response = await fetch(vworldUrl);
+    // 최대 20초 제한
+    const controller = new AbortController();
+    const timeout = setTimeout(() => {
+      controller.abort();
+    }, 20000);
+
+    let response;
+
+    try {
+      response = await fetch(vworldUrl, {
+        method: 'GET',
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0'
+        }
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
 
     const contentType =
       response.headers.get('content-type') ||
@@ -72,23 +91,30 @@ app.get('/api/vworld/wms', async (req, res) => {
       await response.arrayBuffer()
     );
 
-    console.log('[VWorld WMS 응답]', {
+    console.log('[WMS 응답 결과]', {
       status: response.status,
+      statusText: response.statusText,
       contentType,
-      size: buffer.length
+      contentLength: buffer.length
     });
 
+    // VWorld 응답 상태와 콘텐츠를 그대로 전달
     res.status(response.status);
     res.setHeader('Content-Type', contentType);
     res.setHeader('Cache-Control', 'no-cache');
     res.end(buffer);
 
   } catch (error) {
-    console.error('[VWorld WMS 프록시 오류]', error);
+    console.error('[WMS 프록시 예외 발생]', {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    });
 
     res.status(502).json({
       success: false,
-      error: 'VWorld WMS 서버와 통신하지 못했습니다.',
+      error: 'VWorld WMS 호출 중 예외가 발생했습니다.',
+      name: error.name,
       message: error.message
     });
   }
