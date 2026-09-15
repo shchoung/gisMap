@@ -574,8 +574,9 @@ function createOlVWorldWmsLayer(layerName) {
         styles = 'LP_PA_CBND_BUBUN,LP_PA_CBND_BONBUN';
     }
 
-    return new ol.layer.Tile({
-         return new ol.layer.Tile({
+   /* OpenLayers WMS 레이어 생성 (VWorld 전용) */
+    function createOlVWorldWmsLayer(layerName) {
+        return new ol.layer.Tile({
             source: new ol.source.TileWMS({
                 url: 'https://api.vworld.kr/req/wms',
                 params: {
@@ -595,7 +596,7 @@ function createOlVWorldWmsLayer(layerName) {
             }),
             zIndex: 12
         });
-}
+    }
 
     /* OpenLayers 지도 초기화 */
     function buildOlBaseSource(providerKey) {
