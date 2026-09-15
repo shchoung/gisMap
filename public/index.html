@@ -561,20 +561,6 @@
     };
 
     /* OpenLayers WMS 레이어 생성 (VWorld 전용) */
-    /* OpenLayers WMS 레이어 생성 (VWorld 2DCache WMS) */
-function createOlVWorldWmsLayer(layerName) {
-
-    // 레이어별 스타일 설정
-    let layers = layerName;
-    let styles = layerName;
-
-    // 연속지적도는 본번 + 부번을 함께 표시
-    if (layerName === 'LP_PA_CBND_BUBUN') {
-        layers = 'LP_PA_CBND_BUBUN,LP_PA_CBND_BONBUN';
-        styles = 'LP_PA_CBND_BUBUN,LP_PA_CBND_BONBUN';
-    }
-
-   /* OpenLayers WMS 레이어 생성 (VWorld 전용) */
     function createOlVWorldWmsLayer(layerName) {
         return new ol.layer.Tile({
             source: new ol.source.TileWMS({
