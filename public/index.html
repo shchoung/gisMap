@@ -555,53 +555,32 @@
 
     /* VWorld WMS 레이어 정의 */
     const GEO_LAYERS = {
-        'LP_PA_CBND_BUBUN': {
-            title: '연속지적도',
-            name: 'LP_PA_CBND_BUBUN',
-            wmsLayers: 'lp_pa_cbnd_bonbun,lp_pa_cbnd_bubun',
-            wmsStyles: 'lp_pa_cbnd_bonbun_line,lp_pa_cbnd_bubun_line',
-            visible: true,
-            olLayer: null,
-            kakaoOverlay: null,
-            naverOverlay: null
-        },
+        'LP_PA_CBND_BUBUN': { title: '연속지적도', name: 'LP_PA_CBND_BUBUN', visible: false, olLayer: null, kakaoOverlay: null, naverOverlay: null },
         'LT_C_SPBD': { title: '건물공간정보', name: 'LT_C_SPBD', visible: false, olLayer: null, kakaoOverlay: null, naverOverlay: null },
         'LT_C_AISPRT': { title: '용도지역지구도', name: 'LT_C_AISPRT', visible: false, olLayer: null, kakaoOverlay: null, naverOverlay: null }
     };
 
     /* OpenLayers WMS 레이어 생성 (VWorld 전용) */
-    function createOlVWorldWmsLayer(layerKey) {
-        const layerInfo = GEO_LAYERS[layerKey];
-
-        if (!layerInfo) {
-            console.error('정의되지 않은 레이어:', layerKey);
-            return null;
-        }
-
-        if (!layerInfo.wmsLayers) {
-            console.error('WMS 레이어 설정이 없습니다:', layerKey);
-            return null;
-        }
-
+    function createOlVWorldWmsLayer(layerName) {
         return new ol.layer.Tile({
             source: new ol.source.TileWMS({
-                url: '/api/vworld/wms',
+                url: 'https://api.vworld.kr/req/wms',
                 params: {
-                    SERVICE: 'WMS',
-                    REQUEST: 'GetMap',
-                    VERSION: '1.3.0',
-                    LAYERS: layerInfo.wmsLayers,
-                    STYLES: layerInfo.wmsStyles || '',
-                    CRS: 'EPSG:3857',
-                    FORMAT: 'image/png',
-                    TRANSPARENT: true,
-                    KEY: VWORLD_API_KEY,
-                    DOMAIN: CURRENT_DOMAIN
-                },
-                crossOrigin: 'anonymous'
+                    'SERVICE': 'WMS',
+                    'REQUEST': 'GetMap',
+                    'VERSION': '1.3.0',
+                    'LAYERS': layerName,
+                    'STYLES': layerName,
+                    'CRS': 'EPSG:3857',
+                    'WIDTH': 256,
+                    'HEIGHT': 256,
+                    'FORMAT': 'image/png',
+                    'TRANSPARENT': 'TRUE',
+                    'KEY': VWORLD_API_KEY,
+                    'DOMAIN': CURRENT_DOMAIN
+                }
             }),
-            zIndex: 12,
-            visible: layerInfo.visible === true
+            zIndex: 12
         });
     }
 
@@ -609,7 +588,7 @@
     function buildOlBaseSource(providerKey) {
         if (providerKey === 'vworld') {
             return new ol.source.XYZ({
-                url: '/api/vworld/req/wmts/1.0.0/' + VWORLD_API_KEY + '/Base/{z}/{y}/{x}.png',
+                url: 'https://api.vworld.kr/req/wmts/1.0.0/' + VWORLD_API_KEY + '/Base/{z}/{y}/{x}.png',
                 maxZoom: 19,
                 attributions: '&copy; VWorld'
             });
@@ -752,26 +731,17 @@
 
         if (currentBaseMap === 'vworld' || currentBaseMap === 'osm') {
             if (!layerInfo.olLayer) {
-                layerInfo.olLayer = createOlVWorldWmsLayer(layerName);
+                layerInfo.olLayer = createOlVWorldWmsLayer(layerInfo.name);
             }
-
-            if (!layerInfo.olLayer) {
-                console.error('레이어 생성에 실패했습니다:', layerName);
-                return;
-            }
-
             if (!olMap.getLayers().getArray().includes(layerInfo.olLayer)) {
                 olMap.addLayer(layerInfo.olLayer);
             }
-
-            layerInfo.olLayer.setVisible(layerInfo.visible === true);
         }
     }
 
     function removeLayerFromEngine(layerName) {
         const layerInfo = GEO_LAYERS[layerName];
         if (layerInfo && layerInfo.olLayer) {
-            layerInfo.olLayer.setVisible(false);
             olMap.removeLayer(layerInfo.olLayer);
         }
     }
@@ -795,7 +765,6 @@
     }
 
     document.querySelectorAll('.layer-checkbox').forEach(chk => {
-        if (!chk) return;
         chk.addEventListener('change', function() {
             toggleGeoServerLayer(this.dataset.layer, this.checked);
         });
@@ -849,7 +818,7 @@
 
     function reverseGeocodeVWorld(lat, lng, callback) {
         $.ajax({
-            url: '/api/vworld/req/address',
+            url: 'https://api.vworld.kr/req/address',
             dataType: 'jsonp',
             jsonp: 'callback',
             data: {
@@ -871,7 +840,7 @@
     /* 토지 및 건물 상세 정보 조회 (VWorld Data API) */
     function fetchVWorldParcelAndBuildingDetails(lat, lng, jibunAddress) {
         const delta = 0.00015;
-        const dataApiUrl = '/api/vworld/req/data?service=data&request=GetFeature&data=LP_PA_CBND_BUBUN&key=' 
+        const dataApiUrl = 'https://api.vworld.kr/req/data?service=data&request=GetFeature&data=LP_PA_CBND_BUBUN&key=' 
             + VWORLD_API_KEY + '&domain=' + encodeURIComponent(CURRENT_DOMAIN) 
             + '&geomFilter=BOX(' + (lng-delta) + ',' + (lat-delta) + ',' + (lng+delta) + ',' + (lat+delta) + ')&crs=EPSG:4326&format=json';
 
@@ -996,7 +965,7 @@
 
     function searchVWorldAddress(keyword) {
         $.ajax({
-            url: '/api/vworld/req/search',
+            url: 'https://api.vworld.kr/req/search',
             dataType: 'jsonp',
             jsonp: 'callback',
             data: { service: 'search', request: 'search', version: '2.0', crs: 'EPSG:4326', size: 10, page: 1, query: keyword, type: 'address', category: 'parcel', format: 'json', key: VWORLD_API_KEY, domain: CURRENT_DOMAIN },
@@ -1114,15 +1083,8 @@
         olMap.getView().setZoom(sharedZoom);
     }
 
-    // 초기 레이어 상태 갱신 및 초기 표시 레이어 적용
+    // 초기 레이어 상태 갱신 및 검색 실행
     updateLayerStatus();
-    Object.keys(GEO_LAYERS).forEach(layerKey => {
-        if (GEO_LAYERS[layerKey].visible) {
-            applyLayerToCurrentEngine(layerKey);
-        }
-    });
-
-    // 초기 검색 실행
     searchPlaces();
 </script>
 
