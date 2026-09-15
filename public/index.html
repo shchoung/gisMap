@@ -613,8 +613,25 @@
                     'KEY': VWORLD_API_KEY,
                     'DOMAIN': VWORLD_DOMAIN
                 },
-                serverType: 'geoserver',
-                crossOrigin: 'anonymous'
+
+                /*
+                 * ★ crossOrigin 을 설정하면 안 됩니다.
+                 *
+                 *   crossOrigin 을 주면 브라우저가 타일 이미지를 CORS 요청으로
+                 *   가져오려 하는데, VWorld 서버는 Access-Control-Allow-Origin
+                 *   헤더를 내려주지 않습니다. 그 결과 서버가 이미지를 정상(200)
+                 *   반환해도 브라우저가 차단해 버립니다(net::ERR_FAILED 200).
+                 *   설정하지 않으면 일반 <img> 처럼 로드되어 CORS 제약을 받지
+                 *   않습니다. (캔버스로 픽셀을 읽을 일이 없으므로 불필요)
+                 *
+                 * ★ serverType 도 지정하지 않습니다.
+                 *
+                 *   serverType: 'geoserver' 를 주면 OpenLayers가 고해상도
+                 *   화면에서 FORMAT_OPTIONS=dpi:135 를 붙이고 타일을 384px로
+                 *   요청합니다. VWorld는 GeoServer가 아니라서 이 파라미터를
+                 *   이해하지 못합니다.
+                 */
+                hidpi: false
             }),
             zIndex: 12
         });
@@ -776,7 +793,9 @@
                         ', style=' + layerInfo.style +
                         '\n확인할 것: (1) 레이어명/스타일명이 소문자인지' +
                         ' (2) VWorld 콘솔에 등록한 도메인과 "' + VWORLD_DOMAIN + '"이 일치하는지' +
-                        ' (3) 해당 키에 WMS(2D) 서비스가 신청되어 있는지'
+                        ' (3) 해당 키에 WMS(2D) 서비스가 신청되어 있는지' +
+                        '\n위 URL을 새 탭에서 직접 열어보면 VWorld가 돌려주는' +
+                        ' XML 오류 메시지를 그대로 확인할 수 있습니다.'
                     );
                 });
             }
